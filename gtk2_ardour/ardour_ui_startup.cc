@@ -38,7 +38,14 @@
 
 #ifndef PLATFORM_WINDOWS
 #include <sys/resource.h>
+#include <sys/wait.h>
+#include <grp.h>
+#include <pwd.h>
+#include <unistd.h>
 #endif
+
+#include <cstring>
+#include <vector>
 
 #ifdef __FreeBSD__
 #include <sys/types.h>
@@ -52,6 +59,7 @@
 
 #include "pbd/basename.h"
 #include "pbd/file_utils.h"
+#include "pbd/search_path.h"
 
 #include "ardour/audioengine.h"
 #include "ardour/filename_extensions.h"
@@ -707,6 +715,169 @@ ARDOUR_UI::use_config ()
 	}
 }
 
+#if !defined(__APPLE__) && !defined(PLATFORM_WINDOWS) && !defined(__FreeBSD__) && !defined(__NetBSD__)
+
+/* true if the user is listed as a member of `group` in the group database */
+static bool
+user_listed_in_group (const char* group)
+{
+	struct group*  gr = getgrnam (group);
+	struct passwd* pw = getpwuid (getuid ());
+	if (!gr || !pw) {
+		return false;
+	}
+	if (pw->pw_gid == gr->gr_gid) {
+		return true;
+	}
+	for (char** m = gr->gr_mem; m && *m; ++m) {
+		if (strcmp (*m, pw->pw_name) == 0) {
+			return true;
+		}
+	}
+	return false;
+}
+
+/* true if this running process already has `group` (i.e. the user
+ * has logged in again since being added to it)
+ */
+static bool
+process_has_group (const char* group)
+{
+	struct group* gr = getgrnam (group);
+	if (!gr) {
+		return false;
+	}
+	if (getegid () == gr->gr_gid) {
+		return true;
+	}
+	int n = getgroups (0, NULL);
+	if (n <= 0) {
+		return false;
+	}
+	std::vector<gid_t> gids (n);
+	n = getgroups (n, &gids[0]);
+	for (int i = 0; i < n; ++i) {
+		if (gids[i] == gr->gr_gid) {
+			return true;
+		}
+	}
+	return false;
+}
+
+static std::string
+memory_limit_manual_steps ()
+{
+	return _("To fix this yourself, open a terminal and run:\n\n"
+	         "    sudo usermod -aG audio $USER\n\n"
+	         "Then create the file /etc/security/limits.d/95-audio.conf with these two lines:\n\n"
+	         "    @audio   -  rtprio     95\n"
+	         "    @audio   -  memlock    unlimited\n\n"
+	         "Finally, log out and log back in.");
+}
+
+/* Explain the locked-memory limit in plain words and offer to fix it.
+ * The fix runs the `ardour-fix-memlock` helper as root via pkexec.
+ */
+static void
+memory_limit_fix_dialog (rlim_t limit, int64_t ram)
+{
+	/* locate pkexec and our helper */
+	std::string helper;
+	PBD::Searchpath sp (ARDOUR::ardour_dll_directory ());
+	bool have_helper = PBD::find_file (sp, X_("ardour-fix-memlock"), helper);
+
+	gchar* pkexec_c = g_find_program_in_path ("pkexec");
+	std::string pkexec = pkexec_c ? pkexec_c : "";
+	g_free (pkexec_c);
+
+	bool const can_fix = have_helper && !pkexec.empty ();
+
+	std::string text = string_compose (
+		_("%1 can't reserve enough memory for glitch-free audio.\n\n"
+		  "Your system lets %1 lock %2 MB of memory, but your computer has %3 GB. "
+		  "Locked memory can't be moved to the swap file, which prevents clicks and "
+		  "dropouts while recording and playing back."),
+		PROGRAM_NAME,
+		(long long) (limit / (1024 * 1024)),
+		ram > 0 ? string_compose ("%1", (int) ((ram + (1LL << 29)) >> 30)) : std::string ("?"));
+
+	if (user_listed_in_group ("audio") && !process_has_group ("audio")) {
+		text += _("\n\nYou have been added to the \"audio\" group, but you haven't logged out "
+		          "since then. Log out and log back in, and this message should go away.");
+	} else if (can_fix) {
+		text += string_compose (
+			_("\n\n%1 can fix this for you. You'll be asked for your password, "
+			  "and then you need to log out and log back in once."), PROGRAM_NAME);
+	} else {
+		text += "\n\n" + memory_limit_manual_steps ();
+	}
+
+	ArdourMessageDialog msg (text, false, MESSAGE_WARNING, BUTTONS_NONE, true);
+	msg.set_title (_("Memory limit"));
+	msg.add_button (_("Not now"), RESPONSE_CANCEL);
+	if (can_fix) {
+		msg.add_button (_("Fix this for me"), RESPONSE_ACCEPT);
+		msg.set_default_response (RESPONSE_ACCEPT);
+	} else {
+		msg.set_default_response (RESPONSE_CANCEL);
+	}
+
+	VBox* vbox = msg.get_vbox ();
+	HBox hbox;
+	CheckButton cb (_("Do not show this window again"));
+	hbox.pack_start (cb, true, false);
+	vbox->pack_start (hbox);
+	cb.show ();
+	vbox->show ();
+	hbox.show ();
+
+	int const response = msg.run ();
+	msg.hide ();
+
+	if (cb.get_active ()) {
+		XMLNode node (X_("no-memory-warning"));
+		Config->add_instant_xml (node);
+	}
+
+	if (response != RESPONSE_ACCEPT || !can_fix) {
+		return;
+	}
+
+	gchar* argv[] = { const_cast<gchar*> (pkexec.c_str ()), const_cast<gchar*> (helper.c_str ()), NULL };
+	gint     status = -1;
+	GError*  err    = NULL;
+	bool     ok     = g_spawn_sync (NULL, argv, NULL, G_SPAWN_DEFAULT, NULL, NULL, NULL, NULL, &status, &err);
+
+	if (err) {
+		g_error_free (err);
+		ok = false;
+	}
+
+	if (ok && WIFEXITED (status) && WEXITSTATUS (status) == 0) {
+		ArdourMessageDialog done (
+			string_compose (_("Done. Log out and log back in (or restart your computer), "
+			                  "then start %1 again."), PROGRAM_NAME),
+			false, MESSAGE_INFO, BUTTONS_OK, true);
+		done.set_title (_("Memory limit"));
+		done.run ();
+	} else if (ok && WIFEXITED (status) && (WEXITSTATUS (status) == 126 || WEXITSTATUS (status) == 127)) {
+		/* 126: password dialog was cancelled, 127: not authorized. Nothing changed. */
+		ArdourMessageDialog cancelled (
+			_("Nothing was changed.\n\n") + memory_limit_manual_steps (),
+			false, MESSAGE_INFO, BUTTONS_OK, true);
+		cancelled.set_title (_("Memory limit"));
+		cancelled.run ();
+	} else {
+		ArdourMessageDialog failed (
+			_("The automatic fix didn't work.\n\n") + memory_limit_manual_steps (),
+			false, MESSAGE_ERROR, BUTTONS_OK, true);
+		failed.set_title (_("Memory limit"));
+		failed.run ();
+	}
+}
+
+#endif
+
 void
 ARDOUR_UI::check_memory_locking ()
 {
@@ -742,7 +913,7 @@ ARDOUR_UI::check_memory_locking ()
 		if (limits.rlim_cur != RLIM_INFINITY) {
 
 			if (ram == 0 || ((double) limits.rlim_cur / ram) < 0.75) {
-
+#if defined(__FreeBSD__) || defined(__NetBSD__)
 				ArdourMessageDialog msg (
 					string_compose (
 						_("WARNING: Your system has a limit for maximum amount of locked memory. "
@@ -750,13 +921,7 @@ ARDOUR_UI::check_memory_locking ()
 						  "runs out of memory. \n\n"
 						  "You can view the memory limit with 'ulimit -l', "
 						  "and it is normally controlled by %2"),
-						PROGRAM_NAME,
-#if defined(__FreeBSD__) || defined(__NetBSD__)
-						X_("/etc/login.conf")
-#else
-						X_(" /etc/security/limits.conf")
-#endif
-					).c_str());
+						PROGRAM_NAME, X_("/etc/login.conf")).c_str());
 
 				msg.set_default_response (RESPONSE_OK);
 
@@ -775,6 +940,9 @@ ARDOUR_UI::check_memory_locking ()
 					XMLNode node (X_("no-memory-warning"));
 					Config->add_instant_xml (node);
 				}
+#else
+				memory_limit_fix_dialog (limits.rlim_cur, ram);
+#endif
 			}
 		}
 	}

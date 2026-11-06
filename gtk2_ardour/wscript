@@ -993,6 +993,10 @@ def build(bld):
             )
         obj.install_path = bld.env['CONFDIR']
 
+    # Helper run via pkexec by the memory-limit dialog (see ardour_ui_startup.cc)
+    if bld.env['build_target'] not in ['mingw', 'msvc'] and sys.platform != 'darwin':
+        bld.install_as(os.path.join(bld.env['LIBDIR'], 'ardour-fix-memlock'), 'ardour-fix-memlock.sh', chmod=Utils.O755)
+
     # Icons/Images
     bld.install_files(os.path.join (bld.env['DATADIR'], 'icons'), bld.path.ant_glob('icons/*.png'))
     bld.install_files(bld.env['DATADIR'], 'ArdourMono.ttf')

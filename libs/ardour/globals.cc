@@ -368,6 +368,25 @@ config_changed (std::string what_changed)
 }
 
 static void
+lock_memory_please ()
+{
+#if !defined(PLATFORM_WINDOWS) && !defined(__APPLE__)
+	/* An unprivileged process may raise its soft limit up to the hard
+	 * limit. Do so, so that the mlock()ed buffers and pools get as much
+	 * locked memory as the system allows.
+	 */
+	struct rlimit rl;
+
+	if (getrlimit (RLIMIT_MEMLOCK, &rl) == 0 && rl.rlim_cur != rl.rlim_max) {
+		rl.rlim_cur = rl.rlim_max;
+		if (setrlimit (RLIMIT_MEMLOCK, &rl) != 0) {
+			warning << string_compose (_("Could not raise locked memory limit (%1)"), strerror (errno)) << endmsg;
+		}
+	}
+#endif
+}
+
+static void
 lotsa_files_please ()
 {
 #ifndef PLATFORM_WINDOWS
@@ -680,6 +699,7 @@ ARDOUR::init (bool try_optimization, const char* localedir, bool with_gui)
 
 	// allow ardour the absolute maximum number of open files
 	lotsa_files_please ();
+	lock_memory_please ();
 
 #ifdef HAVE_LRDF
 	lrdf_init ();
