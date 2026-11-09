@@ -134,7 +134,7 @@ RouteTimeAxisView::RouteTimeAxisView (PublicEditor& ed, Session* sess, ArdourCan
 	color_stripe.set_elements (ArdourButton::Body);
 	color_stripe.set_corner_radius (2);
 	color_stripe.set_fallthrough_to_parent (true);
-	color_stripe.set_size_request (PX_SCALE (4), -1);
+	color_stripe.set_size_request (std::max (4, (int) rintf (4.f * UIConfiguration::instance ().get_ui_scale ())), -1);
 
 	sess->config.ParameterChanged.connect (*this, invalidator (*this), std::bind (&RouteTimeAxisView::parameter_changed, this, _1), gui_context());
 	UIConfiguration::instance().ParameterChanged.connect (sigc::mem_fun (*this, &RouteTimeAxisView::parameter_changed));

@@ -59,6 +59,7 @@
     <Color name="widget:yellow" value="e5c84aff"/> <!-- VU meter outline -->
     <Color name="theme:grid major" value="3a3f48ff"/>  <!--bar lines-->
     <Color name="theme:grid minor" value="262a31ff"/>  <!--beat lines-->
+    <Color name="theme:highlight" value="2b3a52ff"/>  <!--selected track header, active tool-->
   </Colors>
   <ColorAliases>
     <ColorAlias name="active crossfade" alias="neutral:foreground"/>
@@ -174,7 +175,7 @@
     <ColorAlias name="gtk_somewhat_bright_indicator" alias="theme:contrasting alt"/>
     <ColorAlias name="gtk_texts" alias="neutral:foreground"/>
     <ColorAlias name="gtk_track_header_inactive" alias="theme:bg"/>
-    <ColorAlias name="gtk_track_header_selected" alias="widget:ruddy"/>
+    <ColorAlias name="gtk_track_header_selected" alias="theme:highlight"/>
     <ColorAlias name="inactive crossfade" alias="theme:contrasting"/>
     <ColorAlias name="inactive fade handle" alias="neutral:foreground2"/>
     <ColorAlias name="inactive group tab" alias="theme:bg"/>
@@ -280,7 +281,7 @@
     <ColorAlias name="mono panner position outline" alias="theme:bg"/>
     <ColorAlias name="mono panner text" alias="neutral:backgroundest"/>
     <ColorAlias name="mouse mode button: fill" alias="widget:bg"/>
-    <ColorAlias name="mouse mode button: fill active" alias="alert:greenish"/>
+    <ColorAlias name="mouse mode button: fill active" alias="theme:highlight"/>
     <ColorAlias name="mouse mode button: led active" alias="alert:green"/>
     <ColorAlias name="mute button: fill" alias="widget:bg"/>
     <ColorAlias name="mute button: fill active" alias="alert:yellow"/>
