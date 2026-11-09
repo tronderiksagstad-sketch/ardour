@@ -123,6 +123,8 @@ RouteTimeAxisView::RouteTimeAxisView (PublicEditor& ed, Session* sess, ArdourCan
 	, gm (sess, true, 75, 14)
 	, _ignore_set_layer_display (false)
 	, header_meter (0)
+	, header_clip_align (0.5, 0.5, 0, 0)
+	, header_last_clip (0)
 	, pan_automation_item(NULL)
 {
 	subplugin_menu.set_name ("ArdourContextMenu");
@@ -249,9 +251,9 @@ RouteTimeAxisView::set_route (std::shared_ptr<Route> rt)
 		header_clip_led.set_name ("meterbridge peakindicator");
 		header_clip_led.set_elements ((ArdourButton::Element) (ArdourButton::Edge | ArdourButton::Body));
 		header_clip_led.set_corner_radius (2);
-		header_clip_led.set_size_request (10, 6);
+		header_clip_led.set_size_request (8, 8); /* square */
 		header_clip_led.unset_flags (Gtk::CAN_FOCUS);
-		ArdourWidgets::set_tooltip (header_clip_led, _("Clip indicator: red when this track has clipped. Click to reset."));
+		ArdourWidgets::set_tooltip (header_clip_led, _("Clip indicator: lights red when this track clips. Click to reset."));
 		header_clip_led.signal_button_press_event ().connect (sigc::mem_fun (*this, &RouteTimeAxisView::header_clip_press), false);
 		ArdourMeter::ResetAllPeakDisplays.connect (sigc::mem_fun (*this, &RouteTimeAxisView::reset_header_clip));
 		ArdourMeter::ResetRoutePeakDisplays.connect (sigc::mem_fun (*this, &RouteTimeAxisView::header_clip_route_reset));
@@ -259,10 +261,12 @@ RouteTimeAxisView::set_route (std::shared_ptr<Route> rt)
 
 		header_meter_hbox.set_spacing (3);
 		header_meter_hbox.pack_start (*header_meter, true, true);
-		header_meter_hbox.pack_start (header_clip_led, false, false);
+		header_clip_align.add (header_clip_led);
+		header_meter_hbox.pack_start (header_clip_align, false, false);
 		header_clip_led.show ();
+		header_clip_align.show ();
 		header_meter_hbox.set_no_show_all ();
-		if (UIConfiguration::instance ().get_show_track_meters ()) {
+		if (UIConfiguration::instance ().get_show_track_level_bars ()) {
 			header_meter_hbox.show ();
 		}
 
@@ -2445,10 +2449,8 @@ RouteTimeAxisView::fast_update ()
 {
 	gm.update_meters ();
 	if (header_meter && header_meter_hbox.is_visible ()) {
-		const float peak = header_meter->update_meters ();
-		if (peak >= UIConfiguration::instance ().get_meter_peak () && !header_clip_led.get_active ()) {
-			header_clip_led.set_active (true);
-		}
+		header_meter->update_meters ();
+		update_header_clip ();
 	}
 }
 
@@ -2472,7 +2474,7 @@ void
 RouteTimeAxisView::reset_meter ()
 {
 	if (header_meter) {
-		if (UIConfiguration::instance().get_show_track_meters()) {
+		if (UIConfiguration::instance().get_show_track_level_bars()) {
 			header_meter_hbox.show ();
 		} else {
 			header_meter_hbox.hide ();
@@ -2485,7 +2487,9 @@ RouteTimeAxisView::reset_meter ()
 		}
 		gm.get_level_meter().setup_meters (height - 9, meter_width);
 	} else {
-		hide_meter ();
+		/* only the vertical meter; the level bar is handled above */
+		gm.reset_peak_display ();
+		gm.hide_all_meters ();
 	}
 }
 
@@ -2500,7 +2504,7 @@ RouteTimeAxisView::meter_changed ()
 {
 	ENSURE_GUI_THREAD (*this, &RouteTimeAxisView::meter_changed)
 	reset_meter();
-	if (_route && !no_redraw && UIConfiguration::instance().get_show_track_meters()) {
+	if (_route && !no_redraw && (UIConfiguration::instance().get_show_track_meters() || UIConfiguration::instance().get_show_track_level_bars())) {
 		request_redraw ();
 	}
 	// reset peak when meter point changes
@@ -2817,5 +2821,46 @@ RouteTimeAxisView::header_clip_group_reset (std::shared_ptr<ARDOUR::RouteGroup> 
 {
 	if (_route && g == _route->route_group ()) {
 		reset_header_clip ();
+	}
+}
+
+/* Light the clip LED while any audio channel is at or above the meter peak
+ * threshold. By default it goes out one second after the last clip; with
+ * "hold-track-clip-lights" it stays on until clicked.
+ */
+void
+RouteTimeAxisView::update_header_clip ()
+{
+	if (!_route) {
+		return;
+	}
+
+	std::shared_ptr<ARDOUR::PeakMeter> pm = _route->shared_peak_meter ();
+	const uint32_t nmidi  = pm->input_streams ().n_midi ();
+	const uint32_t ntotal = pm->input_streams ().n_total ();
+	const float    thresh = UIConfiguration::instance ().get_meter_peak ();
+
+	bool clipping = false;
+	for (uint32_t n = nmidi; n < ntotal; ++n) {
+		if (pm->meter_level (n, ARDOUR::MeterPeak) >= thresh) {
+			clipping = true;
+			break;
+		}
+	}
+
+	const int64_t now = g_get_monotonic_time ();
+
+	if (clipping) {
+		header_last_clip = now;
+		if (!header_clip_led.get_active ()) {
+			header_clip_led.set_active (true);
+		}
+	} else if (header_clip_led.get_active ()
+	           && !UIConfiguration::instance ().get_hold_track_clip_lights ()
+	           && now - header_last_clip > 1000000 /* 1 second */) {
+		header_clip_led.set_active (false);
+		if (header_meter) {
+			header_meter->clear_meters (true); /* also drop the bar's red tint */
+		}
 	}
 }

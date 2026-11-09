@@ -2888,10 +2888,29 @@ RCOptionEditor::RCOptionEditor ()
 	add_option (_("Appearance/Editor"),
 	     new BoolOption (
 		     "show-track-meters",
-		     _("Show meters in track headers"),
+		     _("Show vertical meters in track headers"),
 		     sigc::mem_fun (UIConfiguration::instance(), &UIConfiguration::get_show_track_meters),
 		     sigc::mem_fun (UIConfiguration::instance(), &UIConfiguration::set_show_track_meters)
 		     ));
+
+	add_option (_("Appearance/Editor"),
+	     new BoolOption (
+		     "show-track-level-bars",
+		     _("Show level bars under track names"),
+		     sigc::mem_fun (UIConfiguration::instance(), &UIConfiguration::get_show_track_level_bars),
+		     sigc::mem_fun (UIConfiguration::instance(), &UIConfiguration::set_show_track_level_bars)
+		     ));
+
+	bo = new BoolOption (
+		     "hold-track-clip-lights",
+		     _("Keep track clip lights on until clicked"),
+		     sigc::mem_fun (UIConfiguration::instance(), &UIConfiguration::get_hold_track_clip_lights),
+		     sigc::mem_fun (UIConfiguration::instance(), &UIConfiguration::set_hold_track_clip_lights)
+		     );
+	add_option (_("Appearance/Editor"), bo);
+	Gtkmm2ext::UI::instance()->set_tip (bo->tip_widget(),
+	     _("When enabled, the clip light next to a track's level bar stays red until you click it. "
+	       "When disabled, it goes out by itself one second after the last clip."));
 
 	add_option (_("Appearance/Editor"),
 	     new BoolOption (

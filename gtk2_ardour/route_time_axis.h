@@ -258,6 +258,9 @@ protected:
 	LevelMeterVBox*             header_meter;
 	ArdourWidgets::ArdourButton header_clip_led;
 	void reset_header_clip ();
+	void update_header_clip ();
+	Gtk::Alignment              header_clip_align;
+	int64_t                     header_last_clip;
 	bool header_clip_press (GdkEventButton*);
 	void header_clip_route_reset (ARDOUR::Route*);
 	void header_clip_group_reset (std::shared_ptr<ARDOUR::RouteGroup>);

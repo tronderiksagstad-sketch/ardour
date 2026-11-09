@@ -395,7 +395,7 @@ ARDOUR_UI::parameter_changed (std::string p)
 	} else if (p == "use-video-sync") {
 		ActionManager::map_some_state ("Transport",  "ToggleVideoSync", sigc::mem_fun (_session->config, &SessionConfiguration::get_use_video_sync));
 
-	} else if (p == "show-track-meters") {
+	} else if (p == "show-track-meters" || p == "show-track-level-bars") {
 		if (editor) editor->toggle_meter_updating();
 	} else if (p == "super-rapid-clock-update") {
 		if (_session) {

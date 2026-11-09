@@ -671,8 +671,10 @@ Editor::register_actions ()
 
 	ActionManager::register_toggle_action (editor_actions, X_("ToggleSummary"), _("Show Summary"), sigc::mem_fun (*this, &Editor::set_summary));
 	{
-		Glib::RefPtr<Gtk::Action> act = ActionManager::register_toggle_action (editor_actions, X_("ToggleTrackMeters"), _("Show Track Meters"), sigc::mem_fun (*this, &Editor::set_track_meters_visible));
+		Glib::RefPtr<Gtk::Action> act = ActionManager::register_toggle_action (editor_actions, X_("ToggleTrackMeters"), _("Show Vertical Track Meters"), sigc::mem_fun (*this, &Editor::set_track_meters_visible));
 		Glib::RefPtr<ToggleAction>::cast_static (act)->set_active (UIConfiguration::instance ().get_show_track_meters ());
+		act = ActionManager::register_toggle_action (editor_actions, X_("ToggleTrackLevelBars"), _("Show Track Level Bars"), sigc::mem_fun (*this, &Editor::set_track_level_bars_visible));
+		Glib::RefPtr<ToggleAction>::cast_static (act)->set_active (UIConfiguration::instance ().get_show_track_level_bars ());
 	}
 
 	ActionManager::register_toggle_action (editor_actions, X_("ToggleVerticalSummary"), _("Show Vertical Summary"), sigc::mem_fun (*this, &Editor::set_vsummary));
@@ -958,6 +960,15 @@ Editor::set_track_meters_visible ()
 	Glib::RefPtr<ToggleAction> tact = ActionManager::get_toggle_action (X_("Editor"), X_("ToggleTrackMeters"));
 	if (UIConfiguration::instance ().get_show_track_meters () != tact->get_active ()) {
 		UIConfiguration::instance ().set_show_track_meters (tact->get_active ());
+	}
+}
+
+void
+Editor::set_track_level_bars_visible ()
+{
+	Glib::RefPtr<ToggleAction> tact = ActionManager::get_toggle_action (X_("Editor"), X_("ToggleTrackLevelBars"));
+	if (UIConfiguration::instance ().get_show_track_level_bars () != tact->get_active ()) {
+		UIConfiguration::instance ().set_show_track_level_bars (tact->get_active ());
 	}
 }
 

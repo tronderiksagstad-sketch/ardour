@@ -67,7 +67,7 @@ void
 Editor::toggle_meter_updating()
 {
 	DisplaySuspender ds;
-	if (UIConfiguration::instance().get_show_track_meters()) {
+	if (UIConfiguration::instance().get_show_track_meters() || UIConfiguration::instance().get_show_track_level_bars()) {
 		start_updating_meters ();
 	} else {
 		stop_updating_meters ();

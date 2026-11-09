@@ -5707,10 +5707,15 @@ Editor::ui_parameter_changed (string parameter)
 	EditingContext::ui_parameter_changed (parameter);
 
 	if (parameter == "show-track-meters") {
-		/* keep View > Show Track Meters in step with Preferences */
+		/* keep the View menu in step with Preferences */
 		Glib::RefPtr<ToggleAction> tact = ActionManager::get_toggle_action (X_("Editor"), X_("ToggleTrackMeters"), false);
 		if (tact && tact->get_active () != UIConfiguration::instance ().get_show_track_meters ()) {
 			tact->set_active (UIConfiguration::instance ().get_show_track_meters ());
+		}
+	} else if (parameter == "show-track-level-bars") {
+		Glib::RefPtr<ToggleAction> tact = ActionManager::get_toggle_action (X_("Editor"), X_("ToggleTrackLevelBars"), false);
+		if (tact && tact->get_active () != UIConfiguration::instance ().get_show_track_level_bars ()) {
+			tact->set_active (UIConfiguration::instance ().get_show_track_level_bars ());
 		}
 	}
 
