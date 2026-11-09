@@ -464,11 +464,13 @@ Editor::restore_ruler_visibility ()
 		ruler_timecode_action->set_active (td == Temporal::AudioTime);
 		ruler_samples_action->set_active (false);
 		ruler_bbt_action->set_active (td == Temporal::BeatTime);
-		ruler_meter_action->set_active (td == Temporal::BeatTime);
-		ruler_tempo_action->set_active (td == Temporal::BeatTime);
-		ruler_range_action->set_active (true);
-		ruler_marker_action->set_active (true);
-		ruler_section_action->set_active (td == Temporal::BeatTime);
+		/* Keep the top of the editor uncluttered: these can be shown
+		 * from View > Rulers (or by right-clicking the ruler area). */
+		ruler_meter_action->set_active (false);
+		ruler_tempo_action->set_active (false);
+		ruler_range_action->set_active (false);
+		ruler_marker_action->set_active (false);
+		ruler_section_action->set_active (false);
 	}
 
 	no_ruler_shown_update = false;

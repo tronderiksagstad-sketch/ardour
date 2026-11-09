@@ -254,7 +254,13 @@ protected:
 	ArdourWidgets::ArdourButton number_label;
 	ArdourWidgets::ArdourButton color_stripe;
 	Gtk::VBox                   name_meter_vbox;
+	Gtk::HBox                   header_meter_hbox;
 	LevelMeterVBox*             header_meter;
+	ArdourWidgets::ArdourButton header_clip_led;
+	void reset_header_clip ();
+	bool header_clip_press (GdkEventButton*);
+	void header_clip_route_reset (ARDOUR::Route*);
+	void header_clip_group_reset (std::shared_ptr<ARDOUR::RouteGroup>);
 
 	Gtk::Menu           subplugin_menu;
 	Gtk::Menu*          automation_action_menu;

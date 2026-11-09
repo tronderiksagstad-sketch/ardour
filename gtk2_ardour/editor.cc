@@ -5706,6 +5706,14 @@ Editor::ui_parameter_changed (string parameter)
 {
 	EditingContext::ui_parameter_changed (parameter);
 
+	if (parameter == "show-track-meters") {
+		/* keep View > Show Track Meters in step with Preferences */
+		Glib::RefPtr<ToggleAction> tact = ActionManager::get_toggle_action (X_("Editor"), X_("ToggleTrackMeters"), false);
+		if (tact && tact->get_active () != UIConfiguration::instance ().get_show_track_meters ()) {
+			tact->set_active (UIConfiguration::instance ().get_show_track_meters ());
+		}
+	}
+
 	if (parameter == "icon-set") {
 		_cursors->set_cursor_set (UIConfiguration::instance().get_icon_set());
 		content_right_pane.set_drag_cursor (*PublicEditor::instance().cursors()->expand_left_right);

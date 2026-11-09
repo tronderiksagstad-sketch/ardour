@@ -660,6 +660,7 @@
       <menuitem action='show-editor-list'/>
       <menuitem action='show-editor-props'/>
 
+      <menuitem action='ToggleTrackMeters'/>
       <menuitem action='ToggleSummary'/>
       <menuitem action='ToggleVerticalSummary'/>
       <menuitem action='ToggleGroupTabs'/>

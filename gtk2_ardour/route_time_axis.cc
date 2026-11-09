@@ -81,6 +81,7 @@
 #include "gui_thread.h"
 #include "item_counts.h"
 #include "keyboard.h"
+#include "meter_patterns.h"
 #include "paste_context.h"
 #include "patch_change_widget.h"
 #include "point_selection.h"
@@ -242,9 +243,32 @@ RouteTimeAxisView::set_route (std::shared_ptr<Route> rt)
 		header_meter->set_meter (_route->shared_peak_meter ().get ());
 		header_meter->setup_meters (60, 3, 2);
 		header_meter->set_max_audio_meter_count (2);
+
+		/* clip light: turns red when the track has clipped, and stays
+		 * red until clicked (or all peak displays are reset) */
+		header_clip_led.set_name ("meterbridge peakindicator");
+		header_clip_led.set_elements ((ArdourButton::Element) (ArdourButton::Edge | ArdourButton::Body));
+		header_clip_led.set_corner_radius (2);
+		header_clip_led.set_size_request (10, 6);
+		header_clip_led.unset_flags (Gtk::CAN_FOCUS);
+		ArdourWidgets::set_tooltip (header_clip_led, _("Clip indicator: red when this track has clipped. Click to reset."));
+		header_clip_led.signal_button_press_event ().connect (sigc::mem_fun (*this, &RouteTimeAxisView::header_clip_press), false);
+		ArdourMeter::ResetAllPeakDisplays.connect (sigc::mem_fun (*this, &RouteTimeAxisView::reset_header_clip));
+		ArdourMeter::ResetRoutePeakDisplays.connect (sigc::mem_fun (*this, &RouteTimeAxisView::header_clip_route_reset));
+		ArdourMeter::ResetGroupPeakDisplays.connect (sigc::mem_fun (*this, &RouteTimeAxisView::header_clip_group_reset));
+
+		header_meter_hbox.set_spacing (3);
+		header_meter_hbox.pack_start (*header_meter, true, true);
+		header_meter_hbox.pack_start (header_clip_led, false, false);
+		header_clip_led.show ();
+		header_meter_hbox.set_no_show_all ();
+		if (UIConfiguration::instance ().get_show_track_meters ()) {
+			header_meter_hbox.show ();
+		}
+
 		name_meter_vbox.set_spacing (2);
 		name_meter_vbox.pack_start (name_label, true, true);
-		name_meter_vbox.pack_start (*header_meter, false, false);
+		name_meter_vbox.pack_start (header_meter_hbox, false, false);
 		name_meter_vbox.show ();
 		controls_table.attach (name_meter_vbox, left, right, 0, 1, Gtk::FILL|Gtk::EXPAND, Gtk::SHRINK, 0, 0);
 	}
@@ -2420,8 +2444,11 @@ void
 RouteTimeAxisView::fast_update ()
 {
 	gm.update_meters ();
-	if (header_meter) {
-		header_meter->update_meters ();
+	if (header_meter && header_meter_hbox.is_visible ()) {
+		const float peak = header_meter->update_meters ();
+		if (peak >= UIConfiguration::instance ().get_meter_peak () && !header_clip_led.get_active ()) {
+			header_clip_led.set_active (true);
+		}
 	}
 }
 
@@ -2430,6 +2457,9 @@ RouteTimeAxisView::hide_meter ()
 {
 	clear_meter ();
 	gm.hide_all_meters ();
+	if (header_meter) {
+		header_meter_hbox.hide ();
+	}
 }
 
 void
@@ -2441,6 +2471,13 @@ RouteTimeAxisView::show_meter ()
 void
 RouteTimeAxisView::reset_meter ()
 {
+	if (header_meter) {
+		if (UIConfiguration::instance().get_show_track_meters()) {
+			header_meter_hbox.show ();
+		} else {
+			header_meter_hbox.hide ();
+		}
+	}
 	if (UIConfiguration::instance().get_show_track_meters()) {
 		int meter_width = 3;
 		if (_route && _route->shared_peak_meter()->input_streams().n_total() == 1) {
@@ -2743,4 +2780,42 @@ bool
 RouteTimeAxisView::set_marked_for_display (bool yn)
 {
 	return RouteUI::mark_hidden (!yn);
+}
+
+void
+RouteTimeAxisView::reset_header_clip ()
+{
+	if (header_meter) {
+		header_meter->clear_meters (true);
+	}
+	header_clip_led.set_active (false);
+}
+
+bool
+RouteTimeAxisView::header_clip_press (GdkEventButton* ev)
+{
+	if (ev->button == 1) {
+		if (Keyboard::modifier_state_equals (ev->state, Keyboard::PrimaryModifier)) {
+			ArdourMeter::ResetAllPeakDisplays (); /* Ctrl-click: reset every track */
+		} else if (_route) {
+			ArdourMeter::ResetRoutePeakDisplays (_route.get ());
+		}
+	}
+	return true;
+}
+
+void
+RouteTimeAxisView::header_clip_route_reset (ARDOUR::Route* r)
+{
+	if (_route && _route.get () == r) {
+		reset_header_clip ();
+	}
+}
+
+void
+RouteTimeAxisView::header_clip_group_reset (std::shared_ptr<ARDOUR::RouteGroup> g)
+{
+	if (_route && g == _route->route_group ()) {
+		reset_header_clip ();
+	}
 }

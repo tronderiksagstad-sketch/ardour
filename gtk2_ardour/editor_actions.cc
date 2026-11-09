@@ -670,6 +670,10 @@ Editor::register_actions ()
 	ActionManager::write_sensitive_actions.push_back (act);
 
 	ActionManager::register_toggle_action (editor_actions, X_("ToggleSummary"), _("Show Summary"), sigc::mem_fun (*this, &Editor::set_summary));
+	{
+		Glib::RefPtr<Gtk::Action> act = ActionManager::register_toggle_action (editor_actions, X_("ToggleTrackMeters"), _("Show Track Meters"), sigc::mem_fun (*this, &Editor::set_track_meters_visible));
+		Glib::RefPtr<ToggleAction>::cast_static (act)->set_active (UIConfiguration::instance ().get_show_track_meters ());
+	}
 
 	ActionManager::register_toggle_action (editor_actions, X_("ToggleVerticalSummary"), _("Show Vertical Summary"), sigc::mem_fun (*this, &Editor::set_vsummary));
 
@@ -946,6 +950,15 @@ Editor::toggle_ruler_visibility ()
 
 	update_ruler_visibility ();
 	store_ruler_visibility ();
+}
+
+void
+Editor::set_track_meters_visible ()
+{
+	Glib::RefPtr<ToggleAction> tact = ActionManager::get_toggle_action (X_("Editor"), X_("ToggleTrackMeters"));
+	if (UIConfiguration::instance ().get_show_track_meters () != tact->get_active ()) {
+		UIConfiguration::instance ().set_show_track_meters (tact->get_active ());
+	}
 }
 
 void

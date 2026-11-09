@@ -1998,6 +1998,7 @@ private:
 	PBD::ScopedConnection       inspector_name_connection;
 	void setup_inspector ();
 	void update_tool_button_labels ();
+	void set_track_meters_visible ();
 	void update_inspector_header ();
 	bool show_editor_mixer_when_tracks_arrive;
 	Gtk::VBox current_mixer_strip_vbox;
