@@ -121,6 +121,7 @@ RouteTimeAxisView::RouteTimeAxisView (PublicEditor& ed, Session* sess, ArdourCan
 	, stacked_menu_item (0)
 	, gm (sess, true, 75, 14)
 	, _ignore_set_layer_display (false)
+	, header_meter (0)
 	, pan_automation_item(NULL)
 {
 	subplugin_menu.set_name ("ArdourContextMenu");
@@ -224,6 +225,29 @@ RouteTimeAxisView::set_route (std::shared_ptr<Route> rt)
 	}
 
 	top_hbox.pack_end(gm.get_level_meter(), false, false, 2);
+
+	/* A thin horizontal level bar under the track name */
+	if (controls_table.get_parent () && name_label.get_parent () == &controls_table) {
+		Gtk::Table::TableList& children = controls_table.children ();
+		guint left = 1, right = 2;
+		for (Gtk::Table::TableList::iterator c = children.begin (); c != children.end (); ++c) {
+			if (c->get_widget () == &name_label) {
+				left  = c->get_left_attach ();
+				right = c->get_right_attach ();
+				break;
+			}
+		}
+		controls_table.remove (name_label);
+		header_meter = new LevelMeterVBox (_session);
+		header_meter->set_meter (_route->shared_peak_meter ().get ());
+		header_meter->setup_meters (60, 3, 2);
+		header_meter->set_max_audio_meter_count (2);
+		name_meter_vbox.set_spacing (2);
+		name_meter_vbox.pack_start (name_label, true, true);
+		name_meter_vbox.pack_start (*header_meter, false, false);
+		name_meter_vbox.show ();
+		controls_table.attach (name_meter_vbox, left, right, 0, 1, Gtk::FILL|Gtk::EXPAND, Gtk::SHRINK, 0, 0);
+	}
 
 	top_hbox.pack_start (color_stripe, false, false, 2);
 	top_hbox.reorder_child (color_stripe, 0);
@@ -366,6 +390,7 @@ RouteTimeAxisView::~RouteTimeAxisView ()
 	_automation_tracks.clear ();
 
 	delete route_group_menu;
+	delete header_meter;
 	CatchDeletion (this);
 }
 
@@ -2395,6 +2420,9 @@ void
 RouteTimeAxisView::fast_update ()
 {
 	gm.update_meters ();
+	if (header_meter) {
+		header_meter->update_meters ();
+	}
 }
 
 void

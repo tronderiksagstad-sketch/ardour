@@ -455,6 +455,9 @@
     <ColorAlias name="transport button: fill" alias="widget:bg"/>
     <ColorAlias name="transport button: fill active" alias="alert:blue"/>
     <ColorAlias name="transport button: led active" alias="alert:blue"/>
+    <ColorAlias name="transport play button: fill" alias="widget:bg"/>
+    <ColorAlias name="transport play button: fill active" alias="alert:blue"/>
+    <ColorAlias name="transport play button: led active" alias="alert:blue"/>
     <ColorAlias name="transport clock: background" alias="theme:bg2"/>
     <ColorAlias name="transport clock: cursor" alias="theme:contrasting alt"/>
     <ColorAlias name="transport clock: edited text" alias="theme:contrasting alt"/>

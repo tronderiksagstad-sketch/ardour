@@ -28,6 +28,7 @@
 #include "opts.h"
 #include "timers.h"
 #include "transport_control_ui.h"
+#include "ui_config.h"
 
 #include "pbd/i18n.h"
 
@@ -133,7 +134,10 @@ TransportControlUI::setup (TransportControlProvider* ui)
 		pack_start (_rec_button, true, true, 3);
 	}
 
-	_roll_button.set_name ("transport button");
+	/* The Play button gets its own colours when the theme defines them
+	 * (all bundled themes do); otherwise it looks like the others. */
+	update_roll_button_name ();
+	UIConfiguration::instance ().ColorsChanged.connect (sigc::mem_fun (*this, &TransportControlUI::update_roll_button_name));
 	_stop_button.set_name ("transport button");
 	_goto_start_button.set_name ("transport button");
 	_goto_end_button.set_name ("transport button");
@@ -339,4 +343,12 @@ TransportControlUI::click_button_scroll (GdkEventScroll* ev)
 	gain = std::min (gain, Config->get_max_gain());
 	Config->set_click_gain (gain);
 	return true;
+}
+
+void
+TransportControlUI::update_roll_button_name ()
+{
+	bool failed = false;
+	UIConfiguration::instance ().color (X_("transport play button: fill"), &failed);
+	_roll_button.set_name (failed ? X_("transport button") : X_("transport play button"));
 }

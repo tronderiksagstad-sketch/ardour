@@ -37,6 +37,11 @@ public:
 	TransportControlUI ();
 
 	void setup (TransportControlProvider*);
+
+private:
+	void update_roll_button_name ();
+
+public:
 	void map_actions ();
 	void set_session (ARDOUR::Session *s);
 

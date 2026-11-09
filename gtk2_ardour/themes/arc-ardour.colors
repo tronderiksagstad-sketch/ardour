@@ -472,6 +472,9 @@
     <ColorAlias name="transport button: fill" alias="arc-background-light"/>
     <ColorAlias name="transport button: fill active" alias="arc-blue"/>
     <ColorAlias name="transport button: led active" alias="arc-green"/>
+    <ColorAlias name="transport play button: fill" alias="arc-background-light"/>
+    <ColorAlias name="transport play button: fill active" alias="arc-blue"/>
+    <ColorAlias name="transport play button: led active" alias="arc-green"/>
     <ColorAlias name="transport clock: background" alias="arc-background-dark"/>
     <ColorAlias name="transport clock: cursor" alias="arc-green"/>
     <ColorAlias name="transport clock: edited text" alias="arc-green"/>

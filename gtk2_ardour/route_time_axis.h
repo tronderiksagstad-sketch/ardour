@@ -253,6 +253,8 @@ protected:
 	ArdourWidgets::ArdourButton automation_button;
 	ArdourWidgets::ArdourButton number_label;
 	ArdourWidgets::ArdourButton color_stripe;
+	Gtk::VBox                   name_meter_vbox;
+	LevelMeterVBox*             header_meter;
 
 	Gtk::Menu           subplugin_menu;
 	Gtk::Menu*          automation_action_menu;

@@ -55,6 +55,7 @@ public:
 		PaneBottom   = 0x04, ///< bottom Ebox is a resizable Pane
 		AttLeft      = 0x08, ///< if PaneLeft is not set, pack a fixed size Ebox on the left (Editor-Mixer)
 		AttBottom    = 0x10, ///< bottom is a fixed size EBox attachment
+		AttLeftOnRight = 0x20, ///< with AttLeft: pack that fixed size Ebox on the right-hand side instead
 	};
 
 	Tabbable (const std::string& user_visible_name, std::string const & untranslated_name, Gtk::Widget* top = NULL, bool tabbed_by_default = true, PaneLayout pl = PaneRight);

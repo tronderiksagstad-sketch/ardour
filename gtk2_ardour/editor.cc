@@ -2710,6 +2710,41 @@ Editor::snap_to_marker (timepos_t const & presnap, Temporal::RoundMode direction
 }
 
 
+/* Label the main tool buttons with their name and, dimmed, the key that
+ * selects them (taken from the current key bindings, so it follows any
+ * changes the user makes in the keyboard shortcuts editor).
+ */
+void
+Editor::update_tool_button_labels ()
+{
+	Bindings* b = Bindings::get_bindings (X_("Editing"));
+
+	struct ToolLabel {
+		ArdourButton* button;
+		const char*   action;
+		std::string   name;
+	} tools[] = {
+		{ &mouse_move_button,   "set-mouse-mode-object", _("Grab") },
+		{ &mouse_select_button, "set-mouse-mode-range",  _("Range") },
+		{ &mouse_cut_button,    "set-mouse-mode-cut",    _("Cut") },
+		{ &mouse_draw_button,   "set-mouse-mode-draw",   _("Draw") },
+	};
+
+	for (auto const& t : tools) {
+		std::string key;
+		Glib::RefPtr<Gtk::Action> act = ActionManager::get_action (X_("Editing"), t.action, false);
+		if (b && act) {
+			Bindings::Operation op;
+			key = b->get_binding_for_action (act, op).display_label (); /* empty if unbound */
+		}
+		std::string text = Gtkmm2ext::markup_escape_text (t.name);
+		if (!key.empty ()) {
+			text += string_compose ("  <span alpha=\"55%%\" size=\"smaller\">%1</span>", Gtkmm2ext::markup_escape_text (key));
+		}
+		t.button->set_text (text, true);
+	}
+}
+
 void
 Editor::setup_toolbar ()
 {
@@ -2762,13 +2797,11 @@ Editor::setup_toolbar ()
 	 * can be told apart without hovering over them.
 	 */
 	mouse_move_button.add_elements (ArdourButton::Text);
-	mouse_move_button.set_text (_("Grab"));
 	mouse_select_button.add_elements (ArdourButton::Text);
-	mouse_select_button.set_text (_("Range"));
 	mouse_cut_button.add_elements (ArdourButton::Text);
-	mouse_cut_button.set_text (_("Cut"));
 	mouse_draw_button.add_elements (ArdourButton::Text);
-	mouse_draw_button.set_text (_("Draw"));
+	update_tool_button_labels ();
+	Bindings::BindingsChanged.connect (*this, invalidator (*this), std::bind (&Editor::update_tool_button_labels, this), gui_context());
 
 	mouse_mode_hbox->set_spacing (spc);
 	mouse_mode_hbox->pack_start (smart_mode_button, false, false);
