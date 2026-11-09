@@ -252,6 +252,7 @@ protected:
 	ArdourWidgets::ArdourButton playlist_button;
 	ArdourWidgets::ArdourButton automation_button;
 	ArdourWidgets::ArdourButton number_label;
+	ArdourWidgets::ArdourButton color_stripe;
 
 	Gtk::Menu           subplugin_menu;
 	Gtk::Menu*          automation_action_menu;

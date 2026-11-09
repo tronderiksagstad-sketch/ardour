@@ -875,7 +875,7 @@ ArdourButton::on_size_request (Gtk::Requisition* req)
 		// forget everything above and just use a fixed square [em] size
 		// "TrackHeader Buttons" are single letter (usually uppercase)
 		// a SizeGroup is much less efficient (lots of gtk work under the hood for each track)
-		const int wh = std::max (rint (TRACKHEADERBTNW * char_avg_pixel_width()), ceil (char_pixel_height() * BASELINESTRETCH + 1.));
+		const int wh = std::max (rint (TRACKHEADERBTNW * char_avg_pixel_width()), ceil (char_pixel_height() * 1.7 + 1.));
 		req->width  = wh;
 		req->height = wh;
 	}

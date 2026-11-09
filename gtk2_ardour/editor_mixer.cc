@@ -53,6 +53,8 @@
 #include "selection.h"
 #include "ui_config.h"
 
+#include "widgets/tooltips.h"
+
 #include "pbd/i18n.h"
 
 using namespace std;
@@ -141,22 +143,22 @@ Editor::show_editor_mixer (bool yn)
 			}
 		}
 
-		if (current_mixer_strip && current_mixer_strip->get_parent() == 0) {
-			content_att_left.add (*current_mixer_strip);
+		if (current_mixer_strip && inspector_box.get_parent() == 0) {
+			content_att_left.add (inspector_box);
+			inspector_box.show ();
 			current_mixer_strip->show ();
 		}
 
 		if (r) {
 			current_mixer_strip->set_route (r);
 			current_mixer_strip->set_width_enum (editor_mixer_strip_width, (void*) this);
+			update_inspector_header ();
 		}
 
 	} else {
 
-		if (current_mixer_strip) {
-			if (current_mixer_strip->get_parent() != 0) {
-				content_att_left.remove ();
-			}
+		if (inspector_box.get_parent() != 0) {
+			content_att_left.remove ();
 		}
 	}
 
@@ -196,6 +198,62 @@ Editor::create_editor_mixer ()
 #endif
 	current_mixer_strip->set_embedded (true);
 
+	setup_inspector ();
+	inspector_box.pack_start (*current_mixer_strip, true, true);
+}
+
+void
+Editor::setup_inspector ()
+{
+	if (inspector_header.get_parent ()) {
+		return; /* already built */
+	}
+
+	inspector_caption.set_markup (string_compose ("<span size=\"smaller\" alpha=\"70%%\">%1</span>", Gtkmm2ext::markup_escape_text (_("Selected track"))));
+	inspector_caption.set_alignment (0.0, 0.5);
+	inspector_caption.set_name (X_("InspectorCaption"));
+
+	inspector_name.set_alignment (0.0, 0.5);
+	inspector_name.set_ellipsize (Pango::ELLIPSIZE_END);
+	inspector_name.set_name (X_("InspectorName"));
+
+	Gtk::VBox* labels = manage (new Gtk::VBox);
+	labels->set_spacing (1);
+	labels->pack_start (inspector_caption, false, false);
+	labels->pack_start (inspector_name, false, false);
+
+	inspector_mixer_button.set_name ("generic button");
+	inspector_mixer_button.set_text (_("Open mixer"));
+	inspector_mixer_button.set_corner_radius (5);
+	inspector_mixer_button.set_related_action (ActionManager::get_action (X_("Common"), X_("show-mixer")));
+	ArdourWidgets::set_tooltip (inspector_mixer_button, _("Show the Mixer window"));
+
+	inspector_header.set_spacing (6);
+	inspector_header.set_border_width (6);
+	inspector_header.pack_start (*labels, true, true);
+	inspector_header.pack_end (inspector_mixer_button, false, false);
+	inspector_header.show_all ();
+
+	inspector_box.set_spacing (2);
+	inspector_box.pack_start (inspector_header, false, false);
+}
+
+void
+Editor::update_inspector_header ()
+{
+	inspector_name_connection.disconnect ();
+
+	std::shared_ptr<ARDOUR::Route> r = current_mixer_strip ? current_mixer_strip->route () : std::shared_ptr<ARDOUR::Route> ();
+
+	if (!r) {
+		inspector_name.set_text ("");
+		return;
+	}
+
+	inspector_name.set_markup (string_compose ("<b>%1</b>", Gtkmm2ext::markup_escape_text (r->name ())));
+
+	r->PropertyChanged.connect (inspector_name_connection, invalidator (*this),
+	                            std::bind (&Editor::update_inspector_header, this), gui_context ());
 }
 
 void
@@ -245,6 +303,7 @@ Editor::set_selected_mixer_strip (TimeAxisView& view)
 	if (route) {
 		current_mixer_strip->set_route (route);
 		current_mixer_strip->set_width_enum (editor_mixer_strip_width, (void*) this);
+		update_inspector_header ();
 	}
 }
 

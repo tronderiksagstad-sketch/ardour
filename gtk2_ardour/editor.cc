@@ -2758,6 +2758,18 @@ Editor::setup_toolbar ()
 	mouse_mode_size_group->add_widget (nudge_forward_button);
 	mouse_mode_size_group->add_widget (nudge_backward_button);
 
+	/* Show a word next to the icon of the four main tools, so they
+	 * can be told apart without hovering over them.
+	 */
+	mouse_move_button.add_elements (ArdourButton::Text);
+	mouse_move_button.set_text (_("Grab"));
+	mouse_select_button.add_elements (ArdourButton::Text);
+	mouse_select_button.set_text (_("Range"));
+	mouse_cut_button.add_elements (ArdourButton::Text);
+	mouse_cut_button.set_text (_("Cut"));
+	mouse_draw_button.add_elements (ArdourButton::Text);
+	mouse_draw_button.set_text (_("Draw"));
+
 	mouse_mode_hbox->set_spacing (spc);
 	mouse_mode_hbox->pack_start (smart_mode_button, false, false);
 
@@ -5513,9 +5525,11 @@ Editor::session_going_away ()
 	*/
 
 	if (current_mixer_strip) {
-		if (current_mixer_strip->get_parent() != 0) {
+		if (inspector_box.get_parent() != 0) {
 			content_att_left.remove ();
 		}
+		inspector_name_connection.disconnect ();
+		inspector_box.remove (*current_mixer_strip);
 		delete current_mixer_strip;
 		current_mixer_strip = 0;
 	}

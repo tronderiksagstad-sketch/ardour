@@ -129,6 +129,13 @@ RouteTimeAxisView::RouteTimeAxisView (PublicEditor& ed, Session* sess, ArdourCan
 	number_label.set_alignment(.5, .5);
 	number_label.set_fallthrough_to_parent (true);
 
+	/* A thin bar in the track's colour at the left edge of the header */
+	color_stripe.set_name ("tracknumber label");
+	color_stripe.set_elements (ArdourButton::Body);
+	color_stripe.set_corner_radius (2);
+	color_stripe.set_fallthrough_to_parent (true);
+	color_stripe.set_size_request (PX_SCALE (4), -1);
+
 	sess->config.ParameterChanged.connect (*this, invalidator (*this), std::bind (&RouteTimeAxisView::parameter_changed, this, _1), gui_context());
 	UIConfiguration::instance().ParameterChanged.connect (sigc::mem_fun (*this, &RouteTimeAxisView::parameter_changed));
 
@@ -218,6 +225,10 @@ RouteTimeAxisView::set_route (std::shared_ptr<Route> rt)
 
 	top_hbox.pack_end(gm.get_level_meter(), false, false, 2);
 
+	top_hbox.pack_start (color_stripe, false, false, 2);
+	top_hbox.reorder_child (color_stripe, 0);
+	color_stripe.show ();
+
 	if (!ARDOUR::Profile->get_mixbus()) {
 		controls_meters_size_group->add_widget (gm.get_level_meter());
 	}
@@ -275,6 +286,14 @@ RouteTimeAxisView::set_route (std::shared_ptr<Route> rt)
 	playlist_button.set_tweaks(ArdourButton::TrackHeader);
 	automation_button.set_tweaks(ArdourButton::TrackHeader);
 	route_group_button.set_tweaks(ArdourButton::TrackHeader);
+
+	/* rounder corners on the header buttons */
+	mute_button->set_corner_radius (5);
+	solo_button->set_corner_radius (5);
+	rec_enable_button->set_corner_radius (5);
+	playlist_button.set_corner_radius (5);
+	automation_button.set_corner_radius (5);
+	route_group_button.set_corner_radius (5);
 
 	if (is_midi_track()) {
 		set_tooltip(automation_button, _("MIDI Controllers and Automation"));
@@ -1126,6 +1145,7 @@ RouteTimeAxisView::route_color_changed ()
 		_view->apply_color (color(), StreamView::RegionColor);
 	}
 	number_label.set_fixed_colors (gdk_color_to_rgba (color()), gdk_color_to_rgba (color()));
+	color_stripe.set_fixed_colors (gdk_color_to_rgba (color()), gdk_color_to_rgba (color()));
 
 	if (!is_master() && UIConfiguration::instance().get_use_route_color_widely()) {
 		gm.set_fader_fg (gdk_color_to_rgba (route_color_tint ()));

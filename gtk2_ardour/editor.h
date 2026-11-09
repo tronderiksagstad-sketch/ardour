@@ -1987,6 +1987,17 @@ private:
 	/* editor-mixer strip */
 
 	MixerStrip *current_mixer_strip;
+
+	/* "Inspector": a caption, the selected track's name and an
+	 * "Open mixer" button above the editor mixer strip */
+	Gtk::VBox                   inspector_box;
+	Gtk::HBox                   inspector_header;
+	Gtk::Label                  inspector_caption;
+	Gtk::Label                  inspector_name;
+	ArdourWidgets::ArdourButton inspector_mixer_button;
+	PBD::ScopedConnection       inspector_name_connection;
+	void setup_inspector ();
+	void update_inspector_header ();
 	bool show_editor_mixer_when_tracks_arrive;
 	Gtk::VBox current_mixer_strip_vbox;
 	void cms_new (std::shared_ptr<ARDOUR::Route>);
