@@ -386,6 +386,8 @@
       <menuitem action='ungroup-selected-regions'/>
       <separator/>
       <menuitem action='loop-region'/>
+      <menuitem action='quantize-audio-to-grid'/>
+      <menuitem action='audio-quantize-settings'/>
       <menuitem action='rename-region'/>
       <menuitem action='loudness-analyze-region'/>
       <menuitem action='spectral-analyze-region'/>
@@ -932,6 +934,8 @@
     <menuitem action='ungroup-selected-regions'/>
     <separator/>
     <menuitem action='loop-region'/>
+    <menuitem action='quantize-audio-to-grid'/>
+    <menuitem action='audio-quantize-settings'/>
     <menuitem action='rename-region'/>
     <menuitem action='edit-region-dedicated-window'/>
     <menu action='RegionMenuEdit'>

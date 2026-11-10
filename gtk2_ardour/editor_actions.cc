@@ -1443,6 +1443,8 @@ Editor::register_region_actions ()
 
 	/* Open the Rhythm Ferret dialogue for the selected regions */
 	register_region_action (_region_actions, RegionActionTarget (SelectedRegions), "show-rhythm-ferret", _("Rhythm Ferret..."), sigc::mem_fun (*this, &Editor::show_rhythm_ferret));
+	register_region_action (_region_actions, RegionActionTarget (SelectedRegions|EnteredRegions), "quantize-audio-to-grid", _("Quantize Audio to Grid"), sigc::mem_fun (*this, &Editor::quantize_audio_to_grid));
+	register_region_action (_region_actions, RegionActionTarget (SelectedRegions|EnteredRegions), "audio-quantize-settings", _("Audio Quantize Settings..."), sigc::mem_fun (*this, &Editor::audio_quantize_settings));
 
 	/* Export the first selected region */
 	register_region_action (_region_actions, RegionActionTarget (SelectedRegions), "export-region", _("Export..."), sigc::mem_fun (*this, &Editor::export_region));

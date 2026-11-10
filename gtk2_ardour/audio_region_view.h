@@ -176,6 +176,14 @@ protected:
 
 	std::list<std::pair<samplepos_t, ArdourCanvas::Line*> > feature_lines;
 
+	/* Warp markers of a quantized region: drag one to move that hit */
+	std::vector<ArdourCanvas::Rectangle*> warp_handles;
+	int                 _warp_drag;       ///< index of the handle being dragged, -1 if none
+	double              _warp_drag_x0;    ///< pointer x at the start of the drag
+	double              _warp_drag_px0;   ///< handle x at the start of the drag
+	void update_warp_markers ();
+	bool warp_handle_event (GdkEvent*, int index);
+
 	ArdourCanvas::Rectangle*        fade_in_handle; ///< fade in handle, or 0
 	ArdourCanvas::Rectangle*        fade_out_handle; ///< fade out handle, or 0
 	ArdourCanvas::Rectangle*        fade_in_trim_handle; ///< fade in trim handle, or 0

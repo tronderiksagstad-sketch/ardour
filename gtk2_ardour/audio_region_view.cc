@@ -73,6 +73,8 @@
 #include "ui_config.h"
 #include "keyboard.h"
 
+#include "audio_warp.h"
+
 #include "pbd/i18n.h"
 
 using namespace std;
@@ -288,6 +290,9 @@ AudioRegionView::init (bool wfd)
 	get_canvas_frame()->set_data ("linemerger", (LineMerger*) this);
 	_fx_line->canvas_group().raise_to_top ();
 
+	_warp_drag = -1;
+	update_warp_markers ();
+
 	/* XXX sync mark drag? */
 }
 
@@ -502,6 +507,7 @@ AudioRegionView::reset_width_dependent_items (double pixel_width)
 
 	RegionView::reset_width_dependent_items(pixel_width);
 	assert(_pixel_width == pixel_width);
+	update_warp_markers ();
 
 	pending_peak_data->set_x1(pixel_width);
 
@@ -590,6 +596,7 @@ AudioRegionView::set_height (gdouble height)
 
 	RegionView::set_height (height);
 	pending_peak_data->set_y1 (height);
+	update_warp_markers ();
 
 	RouteTimeAxisView& atv (*(dynamic_cast<RouteTimeAxisView*>(&trackview))); // ick
 	uint32_t nchans = atv.track()->n_channels().n_audio();
@@ -2000,4 +2007,111 @@ AudioRegionView::make_merger ()
 	return new MergeableLine (_fx_line, std::shared_ptr<AutomationControl>(),
 	                          [this](timepos_t const& t) { return timepos_t (_region->position().distance (t)); },
 	                          nullptr, nullptr);
+}
+
+/* ---- warp markers ---------------------------------------------------- */
+
+void
+AudioRegionView::update_warp_markers ()
+{
+	if (_warp_drag >= 0) {
+		return; /* leave the handle where the pointer has it */
+	}
+
+	AudioWarp::Map m;
+	AudioWarp::markers (audio_region (), m);
+
+	while (warp_handles.size () < m.size ()) {
+		ArdourCanvas::Rectangle* h = new ArdourCanvas::Rectangle (group);
+		CANVAS_DEBUG_NAME (h, string_compose ("warp marker for %1", region ()->name ()));
+		h->set_outline (false);
+		const int idx = warp_handles.size ();
+		h->Event.connect (sigc::bind (sigc::mem_fun (*this, &AudioRegionView::warp_handle_event), idx));
+		warp_handles.push_back (h);
+	}
+	while (warp_handles.size () > m.size ()) {
+		delete warp_handles.back ();
+		warp_handles.pop_back ();
+	}
+
+	const double   half = std::max (2.0, rint (3.0 * UIConfiguration::instance ().get_ui_scale ()));
+	const uint32_t c    = UIConfiguration::instance ().color ("gtk_bg_selected");
+
+	for (size_t i = 0; i < m.size (); ++i) {
+		const double px = trackview.editor ().sample_to_pixel (m[i].out);
+		warp_handles[i]->set (ArdourCanvas::Rect (px - half, 1.0, px + half, _height - 1.0));
+		warp_handles[i]->set_fill_color (Gtkmm2ext::change_alpha (c, 0.55));
+		warp_handles[i]->raise_to_top ();
+		warp_handles[i]->show ();
+	}
+}
+
+bool
+AudioRegionView::warp_handle_event (GdkEvent* ev, int index)
+{
+	if (index < 0 || index >= (int) warp_handles.size ()) {
+		return false;
+	}
+	ArdourCanvas::Rectangle* h = warp_handles[index];
+	const uint32_t           c = UIConfiguration::instance ().color ("gtk_bg_selected");
+
+	switch (ev->type) {
+	case GDK_ENTER_NOTIFY:
+		h->set_fill_color (c);
+		return false;
+
+	case GDK_LEAVE_NOTIFY:
+		if (_warp_drag != index) {
+			h->set_fill_color (Gtkmm2ext::change_alpha (c, 0.55));
+		}
+		return false;
+
+	case GDK_BUTTON_PRESS:
+		if (ev->button.button != 1) {
+			return false;
+		}
+		_warp_drag     = index;
+		_warp_drag_x0  = ev->button.x;
+		_warp_drag_px0 = (h->get ().x0 + h->get ().x1) / 2.0;
+		h->grab ();
+		return true;
+
+	case GDK_MOTION_NOTIFY: {
+		if (_warp_drag != index) {
+			return false;
+		}
+		/* keep it between its neighbours and inside the region */
+		AudioWarp::Map m;
+		AudioWarp::markers (audio_region (), m);
+		EditingContext& ed  = trackview.editor ();
+		const double    min = (index > 0 ? ed.sample_to_pixel (m[index - 1].out) : 0) + 4;
+		const double    max = (index + 1 < (int) m.size () ? ed.sample_to_pixel (m[index + 1].out) : _pixel_width) - 4;
+		const double    px  = std::max (min, std::min (max, _warp_drag_px0 + ev->motion.x - _warp_drag_x0));
+		const double    half = (h->get ().x1 - h->get ().x0) / 2.0;
+		h->set (ArdourCanvas::Rect (px - half, 1.0, px + half, _height - 1.0));
+		return true;
+	}
+
+	case GDK_BUTTON_RELEASE: {
+		if (_warp_drag != index) {
+			return false;
+		}
+		h->ungrab ();
+		_warp_drag = -1;
+		const double px = (h->get ().x0 + h->get ().x1) / 2.0;
+		if (fabs (px - _warp_drag_px0) < 1.0) {
+			return true; /* just a click */
+		}
+		const samplecnt_t out = trackview.editor ().pixel_to_sample (px);
+		/* re-render once this event is done: the region (and this view)
+		 * gets replaced by the newly rendered one */
+		std::shared_ptr<ARDOUR::AudioRegion> ar = audio_region ();
+		Glib::signal_idle ().connect ([ar, index, out] () { AudioWarp::move_marker (ar, index, out); return false; });
+		return true;
+	}
+
+	default:
+		break;
+	}
+	return false;
 }

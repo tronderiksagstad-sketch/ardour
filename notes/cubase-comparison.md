@@ -15,7 +15,7 @@ Checked against this source tree where unsure. Written 2026-11-10.
 | Chord Pads | ❌ |
 | Control Room | ✅ **Monitor Section** (dim, mono, cut, solo modes, solo-isolate, cue). |
 | Comping | 🟡 Takes kept as playlists, **layered recording**; no take lanes. |
-| Audio Warp Quantize | 🟡 **Rhythm Ferret** finds hits and splits; no stretch-to-grid across tracks. |
+| Audio Warp Quantize | ✅ *(this fork)* **Quantize Audio to Grid**: stretches between hits, several tracks in sync, draggable warp markers. |
 
 ## General
 - ✅ 32-bit float engine, high sample rates, low latency, free routing.
@@ -42,7 +42,7 @@ Checked against this source tree where unsure. Written 2026-11-10.
 
 ## Audio editing
 - ✅ Time-stretch and pitch-shift per region (Rubber Band), region gain envelopes, fades, crossfades, polarity.
-- 🟡 Audio quantize (Rhythm Ferret).
+- ✅ Audio quantize *(this fork)*: Quantize Audio to Grid (see Highlights).
 - ❌ VariAudio-style pitch editing. ❌ Spectral warping.
 
 ## Mixing
@@ -70,7 +70,8 @@ Free and open source · native Linux · clip launching (Cue page) · Lua scripti
 
 ## Gaps, by effort
 - **Fits Ardour's design (days to weeks each):** take-lane comping, chord track + chord pads,
-  pattern/step sequencer (could build on the Cue page), multi-track audio warp quantize, instrument stacks.
+  pattern/step sequencer (could build on the Cue page), instrument stacks.
+  (Multi-track audio warp quantize: done in this fork.)
 - **Very large / research-level:** VariAudio-style pitch editing, AI stem separation, score editor.
 
 ## Useful building blocks already in the source
