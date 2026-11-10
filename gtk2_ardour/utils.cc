@@ -73,6 +73,7 @@
 #include "main_clock.h"
 #include "public_editor.h"
 #include "ui_config.h"
+#include "widgets/ardour_button.h"
 #include "utils.h"
 
 #include "pbd/i18n.h"
@@ -528,6 +529,31 @@ get_icon (const char* cname)
 	}
 
 	return img;
+}
+
+static void
+enlarge_fonts_recursive (Gtk::Widget& w, Pango::FontDescription const& fd)
+{
+	w.modify_font (fd);
+	if (ArdourWidgets::ArdourButton* b = dynamic_cast<ArdourWidgets::ArdourButton*> (&w)) {
+		b->set_layout_font (fd);
+	}
+	if (GTK_IS_CONTAINER (w.gobj ())) {
+		/* forall also visits internal children, e.g. a combo box's text */
+		std::vector<GtkWidget*> kids;
+		gtk_container_forall (GTK_CONTAINER (w.gobj ()), +[] (GtkWidget* k, gpointer v) { static_cast<std::vector<GtkWidget*>*> (v)->push_back (k); }, &kids);
+		for (GtkWidget* k : kids) {
+			enlarge_fonts_recursive (*Glib::wrap (k), fd);
+		}
+	}
+}
+
+void
+enlarge_fonts (Gtk::Widget& w, float factor)
+{
+	Pango::FontDescription fd = UIConfiguration::instance ().get_NormalFont ();
+	fd.set_size (rintf (fd.get_size () * factor));
+	enlarge_fonts_recursive (w, fd);
 }
 } // namespace ARDOUR_UI_UTILS
 

@@ -316,6 +316,7 @@ private:
 	void build_left_panel ();
 	void fill_recent_list ();
 	void open_recent_path (std::string const& fullpath, bool safe_mode);
+	std::string _chosen_recent; ///< recent session clicked in the left panel
 	bool start_key_press (GdkEventKey*);
 
 	Gtk::VBox _template_radio_box;

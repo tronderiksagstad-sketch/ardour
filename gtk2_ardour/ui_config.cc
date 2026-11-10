@@ -486,6 +486,16 @@ UIConfiguration::load_state ()
 		error << _("could not find any ui configuration file, canvas will look broken.") << endmsg;
 	}
 
+	/* Modern Dark is this version's look. Move people who are still on
+	 * the old default ("dark", e.g. settings copied from an older
+	 * version) over to it once; a theme picked later is left alone. */
+	if (!get_modern_dark_adopted ()) {
+		if (get_color_file () == X_("dark")) {
+			set_color_file (X_("modern_dark"));
+		}
+		set_modern_dark_adopted (true);
+	}
+
 	return 0;
 }
 

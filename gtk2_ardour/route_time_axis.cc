@@ -227,7 +227,28 @@ RouteTimeAxisView::set_route (std::shared_ptr<Route> rt)
 		blank->show();
 	}
 
-	top_hbox.pack_end(gm.get_level_meter(), false, false, 2);
+	/* vertical meter, with a clip light above it */
+	vmeter_clip_led.set_name ("meterbridge peakindicator");
+	vmeter_clip_led.set_elements ((ArdourButton::Element) (ArdourButton::Edge | ArdourButton::Body));
+	vmeter_clip_led.set_corner_radius (2);
+	vmeter_clip_led.set_size_request (8, 8);
+	vmeter_clip_led.unset_flags (Gtk::CAN_FOCUS);
+	ArdourWidgets::set_tooltip (vmeter_clip_led, _("Clip indicator: lights red when this track clips. Click to reset."));
+	vmeter_clip_led.signal_button_press_event ().connect (sigc::mem_fun (*this, &RouteTimeAxisView::header_clip_press), false);
+	{
+		Gtk::Alignment* a = manage (new Gtk::Alignment (0.5, 0.5, 0, 0));
+		a->add (vmeter_clip_led);
+		a->show_all ();
+		vmeter_vbox.set_spacing (2);
+		vmeter_vbox.pack_start (*a, false, false);
+	}
+	vmeter_vbox.pack_start (gm.get_level_meter(), true, true);
+	vmeter_vbox.show ();
+	vmeter_clip_led.set_no_show_all (true);
+	if (UIConfiguration::instance ().get_show_track_meters ()) {
+		vmeter_clip_led.show ();
+	}
+	top_hbox.pack_end (vmeter_vbox, false, false, 2);
 
 	/* A thin horizontal level bar under the track name */
 	if (controls_table.get_parent () && name_label.get_parent () == &controls_table) {
@@ -2450,6 +2471,8 @@ RouteTimeAxisView::fast_update ()
 	gm.update_meters ();
 	if (header_meter && header_meter_hbox.is_visible ()) {
 		header_meter->update_meters ();
+	}
+	if ((header_meter && header_meter_hbox.is_visible ()) || vmeter_clip_led.is_visible ()) {
 		update_header_clip ();
 	}
 }
@@ -2462,6 +2485,7 @@ RouteTimeAxisView::hide_meter ()
 	if (header_meter) {
 		header_meter_hbox.hide ();
 	}
+	vmeter_clip_led.hide ();
 }
 
 void
@@ -2479,6 +2503,11 @@ RouteTimeAxisView::reset_meter ()
 		} else {
 			header_meter_hbox.hide ();
 		}
+	}
+	if (UIConfiguration::instance().get_show_track_meters()) {
+		vmeter_clip_led.show ();
+	} else {
+		vmeter_clip_led.hide ();
 	}
 	if (UIConfiguration::instance().get_show_track_meters()) {
 		int meter_width = 3;
@@ -2792,7 +2821,14 @@ RouteTimeAxisView::reset_header_clip ()
 	if (header_meter) {
 		header_meter->clear_meters (true);
 	}
-	header_clip_led.set_active (false);
+	set_header_clip (false);
+}
+
+void
+RouteTimeAxisView::set_header_clip (bool yn)
+{
+	header_clip_led.set_active (yn);
+	vmeter_clip_led.set_active (yn);
 }
 
 bool
@@ -2853,12 +2889,12 @@ RouteTimeAxisView::update_header_clip ()
 	if (clipping) {
 		header_last_clip = now;
 		if (!header_clip_led.get_active ()) {
-			header_clip_led.set_active (true);
+			set_header_clip (true);
 		}
 	} else if (header_clip_led.get_active ()
 	           && !UIConfiguration::instance ().get_hold_track_clip_lights ()
 	           && now - header_last_clip > 1000000 /* 1 second */) {
-		header_clip_led.set_active (false);
+		set_header_clip (false);
 		if (header_meter) {
 			header_meter->clear_meters (true); /* also drop the bar's red tint */
 		}

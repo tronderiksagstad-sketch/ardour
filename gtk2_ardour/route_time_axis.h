@@ -257,6 +257,9 @@ protected:
 	Gtk::HBox                   header_meter_hbox;
 	LevelMeterVBox*             header_meter;
 	ArdourWidgets::ArdourButton header_clip_led;
+	ArdourWidgets::ArdourButton vmeter_clip_led; ///< same light, above the vertical meter
+	Gtk::VBox                   vmeter_vbox;
+	void set_header_clip (bool);
 	void reset_header_clip ();
 	void update_header_clip ();
 	Gtk::Alignment              header_clip_align;

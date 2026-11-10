@@ -110,7 +110,7 @@ public:
 		add_events (Gdk::BUTTON_PRESS_MASK | Gdk::BUTTON_RELEASE_MASK | Gdk::ENTER_NOTIFY_MASK | Gdk::LEAVE_NOTIFY_MASK | Gdk::KEY_PRESS_MASK);
 
 		const float scale = UIConfiguration::instance ().get_ui_scale ();
-		_thumb.set_size_request (rintf (112 * scale), rintf (68 * scale));
+		_thumb.set_size_request (rintf (88 * scale), rintf (52 * scale));
 		_thumb.signal_expose_event ().connect (sigc::mem_fun (*this, &RecentSessionRow::thumb_expose));
 
 		_name.set_markup (string_compose ("<span size=\"large\" weight=\"bold\">%1</span>", Gtkmm2ext::markup_escape_text (name)));
@@ -131,8 +131,8 @@ public:
 		Gtk::Alignment* talign = manage (new Gtk::Alignment (0.5, 0.5, 0.0, 0.0));
 		talign->add (_thumb);
 
-		_box.set_spacing (16);
-		_box.set_border_width (6);
+		_box.set_spacing (12);
+		_box.set_border_width (4);
 		_box.pack_start (*talign, false, false);
 		_box.pack_start (*lalign, true, true);
 		add (_box);
@@ -473,6 +473,14 @@ SessionDialog::SessionDialog (DialogTab initial_tab, const std::string& session_
 
 	_tabs.signal_switch_page().connect (sigc::mem_fun (*this, &SessionDialog::tab_page_switched));
 	disallow_idle ();
+
+	/* the old recent-sessions list and the demo page are not reachable
+	 * any more; hide them so they don't take up room */
+	recent_vbox.hide ();
+	demo_vbox.hide ();
+
+	set_title (PROGRAM_NAME);
+	ARDOUR_UI_UTILS::enlarge_fonts (*get_vbox (), 1.3);
 }
 
 SessionDialog::~SessionDialog()
@@ -630,6 +638,7 @@ SessionDialog::session_template_name ()
 void
 SessionDialog::clear_name ()
 {
+	_chosen_recent.clear ();
 	recent_session_display.get_selection()->unselect_all();
 	new_name_entry.set_text (string());
 }
@@ -637,6 +646,14 @@ SessionDialog::clear_name ()
 std::string
 SessionDialog::session_name (bool& should_be_new)
 {
+	if (!_chosen_recent.empty ()) {
+		should_be_new = false;
+		if (Glib::file_test (_chosen_recent, Glib::FILE_TEST_IS_REGULAR)) {
+			return PBD::basename_nosuffix (_chosen_recent);
+		}
+		return Glib::path_get_basename (_chosen_recent);
+	}
+
 	switch (_tabs.get_current_page()) {
 	case 0: {
 		should_be_new = true;
@@ -674,6 +691,13 @@ SessionDialog::session_name (bool& should_be_new)
 std::string
 SessionDialog::session_folder ()
 {
+	if (!_chosen_recent.empty ()) {
+		if (Glib::file_test (_chosen_recent, Glib::FILE_TEST_IS_REGULAR)) {
+			return Glib::path_get_dirname (_chosen_recent);
+		}
+		return _chosen_recent;
+	}
+
 	switch (_tabs.get_current_page()) {
 		case 0:
 			{
@@ -752,7 +776,7 @@ SessionDialog::setup_existing_box ()
 {
 	/* Browse button */
 
-	existing_session_chooser.set_size_request (450, 300);
+	existing_session_chooser.set_size_request (400, 300);
 	existing_session_chooser.set_current_folder(poor_mans_glob (Config->get_default_session_parent_dir()));
 
 	FileFilter session_filter;
@@ -1034,7 +1058,7 @@ static Gtk::VBox*
 form_field (std::string const& caption, Gtk::Widget& w)
 {
 	Gtk::VBox* v = manage (new Gtk::VBox);
-	v->set_spacing (6);
+	v->set_spacing (4);
 	v->pack_start (*form_caption (caption), false, false);
 	v->pack_start (w, false, false);
 	return v;
@@ -1142,8 +1166,8 @@ SessionDialog::setup_new_session_page ()
 	heading->set_alignment (0.0, 0.5);
 
 	Gtk::VBox* column = manage (new Gtk::VBox);
-	column->set_spacing (18);
-	column->set_size_request (rintf (460 * scale), -1);
+	column->set_spacing (12);
+	column->set_size_request (rintf (400 * scale), -1);
 	column->pack_start (*heading, false, false);
 	column->pack_start (*form_field (_("Name"), new_name_entry), false, false);
 	column->pack_start (*form_field (_("Location"), new_folder_chooser), false, false);
@@ -1155,7 +1179,7 @@ SessionDialog::setup_new_session_page ()
 	column->pack_start (_create_button, false, false, 6);
 
 	Gtk::Alignment* center = manage (new Gtk::Alignment (0.5, 0.0, 0.0, 0.0));
-	center->set_padding (rintf (16 * scale), rintf (16 * scale), 0, 0);
+	center->set_padding (rintf (8 * scale), rintf (4 * scale), 0, 0);
 	center->add (*column);
 
 	session_new_vbox.pack_start (*center, true, true);
@@ -1165,6 +1189,9 @@ SessionDialog::setup_new_session_page ()
 uint32_t
 SessionDialog::session_sample_rate () const
 {
+	if (!_chosen_recent.empty ()) {
+		return 0;
+	}
 	return const_cast<Gtk::Notebook&> (_tabs).get_current_page () == 0 ? _chosen_rate : 0;
 }
 
@@ -1214,7 +1241,7 @@ SessionDialog::rebuild_template_buttons ()
 		b->set_alignment (0.0, 0.5);
 		b->set_corner_radius (6);
 		b->set_led_left (true);
-		b->set_size_request (-1, rintf (38 * scale));
+		b->set_size_request (-1, rintf (34 * scale));
 		if (!desc.empty ()) {
 			set_tooltip (*b, desc);
 		}
@@ -2083,15 +2110,14 @@ SessionDialog::build_left_panel ()
 	_recent_heading.set_no_show_all (true);
 
 	_recent_list_box.set_spacing (4);
-	_recent_list_box.set_homogeneous (true);
 
 	_left_panel.set_spacing (8);
-	_left_panel.set_border_width (rintf (12 * scale));
-	_left_panel.set_size_request (rintf (400 * scale), -1);
+	_left_panel.set_border_width (rintf (8 * scale));
+	_left_panel.set_size_request (rintf (330 * scale), -1);
 	_left_panel.pack_start (*brand, false, false, 6);
 	_left_panel.pack_start (new_button, false, false);
 	_left_panel.pack_start (existing_button, false, false);
-	_left_panel.pack_start (_recent_heading, false, false, 12);
+	_left_panel.pack_start (_recent_heading, false, false, 6);
 	_left_panel.pack_start (_recent_list_box, true, true);
 }
 
@@ -2148,7 +2174,7 @@ SessionDialog::fill_recent_list ()
 
 		RecentSessionRow* row = new RecentSessionRow (e.name, details, tip, recent_palette[n++ % (sizeof (recent_palette) / sizeof (recent_palette[0]))]);
 		row->Activated.connect (sigc::bind<0> (sigc::mem_fun (*this, &SessionDialog::open_recent_path), e.path));
-		_recent_list_box.pack_start (*row, true, true);
+		_recent_list_box.pack_start (*row, false, false);
 	}
 
 	if (entries.empty ()) {
@@ -2162,17 +2188,11 @@ SessionDialog::fill_recent_list ()
 void
 SessionDialog::open_recent_path (std::string const& fullpath, bool safe_mode)
 {
-	for (Gtk::TreeModel::iterator i = recent_session_model->children ().begin (); i != recent_session_model->children ().end (); ++i) {
-		if (std::string ((*i)[recent_session_columns.fullpath]) == fullpath) {
-			recent_session_display.get_selection ()->select (i);
-			if (safe_mode) {
-				_disable_plugins.set_active (true);
-			}
-			_tabs.set_current_page (1);
-			response (RESPONSE_ACCEPT);
-			return;
-		}
+	_chosen_recent = fullpath;
+	if (safe_mode) {
+		_disable_plugins.set_active (true);
 	}
+	response (RESPONSE_ACCEPT);
 }
 
 bool

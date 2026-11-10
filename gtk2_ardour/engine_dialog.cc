@@ -182,6 +182,8 @@ EngineControl::EngineControl ()
 
 	settings_table.set_spacings (6);
 	settings_table.set_border_width (12);
+	settings_table.set_row_spacings (8);
+	settings_table.set_col_spacings (12);
 
 	buffer_size_duration_label.set_alignment (0.0); /* left-align */
 
@@ -548,6 +550,9 @@ EngineControl::build_notebook ()
 	populate_action_area (0);
 	on_latency_expand ();
 	on_monitor_expand ();
+
+	/* larger, easier-to-read text and controls */
+	ARDOUR_UI_UTILS::enlarge_fonts (*this, 1.3);
 }
 
 void

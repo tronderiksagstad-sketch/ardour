@@ -121,4 +121,9 @@ bool convert_drop_to_paths (std::vector<std::string>&, const Gtk::SelectionData&
 
 void format_position (ARDOUR::Session*, Temporal::timepos_t const& pos, char* buf, size_t bufsize, bool onoff = true);
 
+/** Make every widget in a window (or any widget tree) use a larger font,
+ * `factor` times the normal UI font. For windows people should be able to
+ * read at a glance, such as the start window and Audio/MIDI Setup. */
+void enlarge_fonts (Gtk::Widget&, float factor);
+
 } // namespace

@@ -56,6 +56,11 @@
 #include "pbd/gstdio_compat.h"
 
 #include <ytkmm/stock.h>
+#include <ytkmm/alignment.h>
+#include <ytkmm/clipboard.h>
+#include <ytkmm/frame.h>
+#include <ytkmm/table.h>
+#include <ytkmm/textview.h>
 
 #include "pbd/basename.h"
 #include "pbd/file_utils.h"
@@ -70,6 +75,8 @@
 #include "gtkmm2ext/application.h"
 
 #include "ambiguous_file_dialog.h"
+#include "ardour_dialog.h"
+#include "gtkmm2ext/utils.h"
 #include "ardour_message.h"
 #include "ardour_ui.h"
 #include "debug.h"
@@ -78,6 +85,7 @@
 #include "missing_file_dialog.h"
 #include "nsm.h"
 #include "opts.h"
+#include "utils.h"
 #include "pingback.h"
 #include "plugin_scan_dialog.h"
 #include "public_editor.h"
@@ -768,19 +776,116 @@ process_has_group (const char* group)
 	return false;
 }
 
-static std::string
-memory_limit_manual_steps ()
+/* A command or file text the user copies into a terminal: shown in a
+ * monospace box they can also select from, with a "Copy" button.
+ */
+static Gtk::Widget*
+copyable_text (std::string const& text)
 {
-	return _("To fix this yourself, open a terminal and run:\n\n"
-	         "    sudo usermod -aG audio $USER\n\n"
-	         "Then create the file /etc/security/limits.d/95-audio.conf with these two lines:\n\n"
-	         "    @audio   -  rtprio     95\n"
-	         "    @audio   -  memlock    unlimited\n\n"
-	         "Finally, log out and log back in.");
+	Gtk::TextView* tv = manage (new Gtk::TextView);
+	tv->get_buffer ()->set_text (text);
+	tv->set_editable (false);
+	tv->set_cursor_visible (false);
+	tv->set_left_margin (8);
+	tv->set_right_margin (8);
+	tv->set_pixels_above_lines (4);
+	tv->set_pixels_below_lines (4);
+	tv->set_name (X_("TextOnBackground"));
+
+	Gtk::Frame* frame = manage (new Gtk::Frame);
+	frame->set_shadow_type (Gtk::SHADOW_IN);
+	frame->add (*tv);
+
+	Gtk::Button* copy = manage (new Gtk::Button (_("Copy")));
+	copy->signal_clicked ().connect ([text, copy] () {
+		Gtk::Clipboard::get ()->set_text (text);
+		Gtk::Clipboard::get (GDK_SELECTION_PRIMARY)->set_text (text);
+		copy->set_label (_("Copied"));
+	});
+
+	Gtk::HBox* row = manage (new Gtk::HBox (false, 8));
+	row->pack_start (*frame, true, true);
+	Gtk::Alignment* a = manage (new Gtk::Alignment (0.5, 0.0, 0.0, 0.0));
+	a->add (*copy);
+	row->pack_start (*a, false, false);
+	return row;
+}
+
+/* Numbered, copy-and-paste steps to raise the limit by hand, using nano. */
+static Gtk::Widget*
+memory_limit_steps ()
+{
+	struct Step {
+		std::string text;
+		std::string copy; // empty: nothing to copy
+	};
+
+	std::vector<Step> steps = {
+		{ _("Open a terminal. On most Linux systems: press Ctrl+Alt+T."), "" },
+		{ _("Add yourself to the \"audio\" group. Copy this, paste it into the terminal with Ctrl+Shift+V and press Enter. "
+		    "Type your password when asked (nothing shows while you type) and press Enter."),
+		  "sudo usermod -aG audio $USER" },
+		{ _("Open the settings file in the nano text editor:"),
+		  "sudo nano /etc/security/limits.d/95-audio.conf" },
+		{ _("Copy these two lines and paste them into nano with Ctrl+Shift+V:"),
+		  "@audio   -  rtprio     95\n@audio   -  memlock    unlimited" },
+		{ _("Save and close nano: press Ctrl+O, then Enter, then Ctrl+X."), "" },
+		{ _("Log out and log back in, or restart the computer."), "" },
+		{ _("Optional: check that it worked. This should print \"unlimited\":"), "ulimit -l" },
+	};
+
+	Gtk::Table* t = manage (new Gtk::Table (steps.size () * 2, 2));
+	t->set_col_spacings (12);
+	t->set_row_spacings (6);
+
+	int row = 0;
+	int n   = 1;
+	for (Step const& st : steps) {
+		Gtk::Label* num = manage (new Gtk::Label);
+		num->set_markup (string_compose ("<b>%1</b>", n++));
+		num->set_alignment (1.0, 0.0);
+
+		Gtk::Label* txt = manage (new Gtk::Label (st.text));
+		txt->set_alignment (0.0, 0.0);
+		txt->set_line_wrap (true);
+		txt->set_size_request (560, -1);
+
+		t->attach (*num, 0, 1, row, row + 1, Gtk::FILL, Gtk::FILL);
+		t->attach (*txt, 1, 2, row, row + 1, Gtk::FILL | Gtk::EXPAND, Gtk::FILL);
+		++row;
+		if (!st.copy.empty ()) {
+			t->attach (*copyable_text (st.copy), 1, 2, row, row + 1, Gtk::FILL | Gtk::EXPAND, Gtk::FILL, 0, 2);
+			++row;
+		}
+	}
+	return t;
+}
+
+static void
+show_memory_limit_steps (std::string const& intro)
+{
+	ArdourDialog d (_("Memory limit: fix it yourself"), true, false);
+	Gtk::VBox* v = d.get_vbox ();
+	v->set_spacing (14);
+	v->set_border_width (18);
+
+	Gtk::Label* head = manage (new Gtk::Label);
+	head->set_markup (string_compose ("<span size=\"large\" weight=\"bold\">%1</span>", Gtkmm2ext::markup_escape_text (intro)));
+	head->set_alignment (0.0, 0.5);
+	head->set_line_wrap (true);
+	v->pack_start (*head, false, false);
+	v->pack_start (*memory_limit_steps (), false, false);
+
+	d.add_button (_("Done"), RESPONSE_OK);
+	d.set_default_response (RESPONSE_OK);
+	v->show_all ();
+	ARDOUR_UI_UTILS::enlarge_fonts (d, 1.3);
+	d.run ();
 }
 
 /* Explain the locked-memory limit in plain words and offer to fix it.
- * The fix runs the `ardour-fix-memlock` helper as root via pkexec.
+ * The fix runs the `ardour-fix-memlock` helper as root via pkexec;
+ * the steps to do it by hand are always one click away.
  */
 static void
 memory_limit_fix_dialog (rlim_t limit, int64_t ram)
@@ -794,53 +899,76 @@ memory_limit_fix_dialog (rlim_t limit, int64_t ram)
 	std::string pkexec = pkexec_c ? pkexec_c : "";
 	g_free (pkexec_c);
 
-	bool const can_fix = have_helper && !pkexec.empty ();
+	bool const can_fix   = have_helper && !pkexec.empty ();
+	bool const relog     = user_listed_in_group ("audio") && !process_has_group ("audio");
 
+	const std::string heading = string_compose (_("%1 can't reserve enough memory for glitch-free audio"), PROGRAM_NAME);
 	std::string text = string_compose (
-		_("%1 can't reserve enough memory for glitch-free audio.\n\n"
-		  "Your system lets %1 lock %2 MB of memory, but your computer has %3 GB. "
+		_("Your system lets %1 lock %2 MB of memory, but your computer has %3 GB. "
 		  "Locked memory can't be moved to the swap file, which prevents clicks and "
 		  "dropouts while recording and playing back."),
 		PROGRAM_NAME,
 		(long long) (limit / (1024 * 1024)),
 		ram > 0 ? string_compose ("%1", (int) ((ram + (1LL << 29)) >> 30)) : std::string ("?"));
 
-	if (user_listed_in_group ("audio") && !process_has_group ("audio")) {
-		text += _("\n\nYou have been added to the \"audio\" group, but you haven't logged out "
-		          "since then. Log out and log back in, and this message should go away.");
+	if (relog) {
+		text += "\n\n" + std::string (_("You have been added to the \"audio\" group, but you haven't logged out "
+		                                "since then. Log out and log back in, and this message should go away."));
 	} else if (can_fix) {
-		text += string_compose (
-			_("\n\n%1 can fix this for you. You'll be asked for your password, "
+		text += "\n\n" + string_compose (
+			_("%1 can fix this for you. You'll be asked for your password, "
 			  "and then you need to log out and log back in once."), PROGRAM_NAME);
 	} else {
-		text += "\n\n" + memory_limit_manual_steps ();
+		text += "\n\n" + std::string (_("It takes a few minutes to fix by hand. Follow the steps below."));
 	}
 
-	ArdourMessageDialog msg (text, false, MESSAGE_WARNING, BUTTONS_NONE, true);
-	msg.set_title (_("Memory limit"));
+	ArdourDialog msg (_("Memory limit"), true, false);
+	Gtk::VBox* v = msg.get_vbox ();
+	v->set_spacing (14);
+	v->set_border_width (18);
+
+	Gtk::Label* head = manage (new Gtk::Label);
+	head->set_markup (string_compose ("<span size=\"x-large\" weight=\"bold\">%1</span>", Gtkmm2ext::markup_escape_text (heading)));
+	head->set_alignment (0.0, 0.5);
+	head->set_line_wrap (true);
+	Gtk::Label* body = manage (new Gtk::Label (text));
+	body->set_alignment (0.0, 0.0);
+	body->set_line_wrap (true);
+	body->set_size_request (600, -1);
+	v->pack_start (*head, false, false);
+	v->pack_start (*body, false, false);
+
+	if (!can_fix && !relog) {
+		v->pack_start (*memory_limit_steps (), false, false);
+	}
+
+	CheckButton* cb = manage (new CheckButton (_("Do not show this window again")));
+	v->pack_start (*cb, false, false, 6);
+
+	const int RESPONSE_STEPS = 1;
 	msg.add_button (_("Not now"), RESPONSE_CANCEL);
-	if (can_fix) {
+	if (can_fix && !relog) {
+		msg.add_button (_("Show me how to do it myself"), RESPONSE_STEPS);
 		msg.add_button (_("Fix this for me"), RESPONSE_ACCEPT);
 		msg.set_default_response (RESPONSE_ACCEPT);
 	} else {
 		msg.set_default_response (RESPONSE_CANCEL);
 	}
 
-	VBox* vbox = msg.get_vbox ();
-	HBox hbox;
-	CheckButton cb (_("Do not show this window again"));
-	hbox.pack_start (cb, true, false);
-	vbox->pack_start (hbox);
-	cb.show ();
-	vbox->show ();
-	hbox.show ();
+	v->show_all ();
+	ARDOUR_UI_UTILS::enlarge_fonts (msg, 1.3);
 
 	int const response = msg.run ();
 	msg.hide ();
 
-	if (cb.get_active ()) {
+	if (cb->get_active ()) {
 		XMLNode node (X_("no-memory-warning"));
 		Config->add_instant_xml (node);
+	}
+
+	if (response == RESPONSE_STEPS) {
+		show_memory_limit_steps (_("Raise the memory limit by hand"));
+		return;
 	}
 
 	if (response != RESPONSE_ACCEPT || !can_fix) {
@@ -863,20 +991,13 @@ memory_limit_fix_dialog (rlim_t limit, int64_t ram)
 			                  "then start %1 again."), PROGRAM_NAME),
 			false, MESSAGE_INFO, BUTTONS_OK, true);
 		done.set_title (_("Memory limit"));
+		ARDOUR_UI_UTILS::enlarge_fonts (done, 1.3);
 		done.run ();
 	} else if (ok && WIFEXITED (status) && (WEXITSTATUS (status) == 126 || WEXITSTATUS (status) == 127)) {
 		/* 126: password dialog was cancelled, 127: not authorized. Nothing changed. */
-		ArdourMessageDialog cancelled (
-			_("Nothing was changed.\n\n") + memory_limit_manual_steps (),
-			false, MESSAGE_INFO, BUTTONS_OK, true);
-		cancelled.set_title (_("Memory limit"));
-		cancelled.run ();
+		show_memory_limit_steps (_("Nothing was changed. You can do it yourself instead:"));
 	} else {
-		ArdourMessageDialog failed (
-			_("The automatic fix didn't work.\n\n") + memory_limit_manual_steps (),
-			false, MESSAGE_ERROR, BUTTONS_OK, true);
-		failed.set_title (_("Memory limit"));
-		failed.run ();
+		show_memory_limit_steps (_("The automatic fix didn't work. You can do it yourself instead:"));
 	}
 }
 
