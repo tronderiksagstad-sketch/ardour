@@ -206,6 +206,16 @@ ARDOUR_UI::install_actions ()
 	ActionManager::write_sensitive_actions.push_back (act);
 	ActionManager::rec_sensitive_actions.push_back (act);
 
+	/* one click: a plain mono or stereo audio track at the end */
+	act = ActionManager::register_action (main_actions, X_("add-mono-track"), _("Add Mono Track"), sigc::bind (sigc::mem_fun (*this, &ARDOUR_UI::add_audio_tracks_quick), 1, false));
+	ActionManager::session_sensitive_actions.push_back (act);
+	ActionManager::write_sensitive_actions.push_back (act);
+	ActionManager::rec_sensitive_actions.push_back (act);
+	act = ActionManager::register_action (main_actions, X_("add-stereo-track"), _("Add Stereo Track"), sigc::bind (sigc::mem_fun (*this, &ARDOUR_UI::add_audio_tracks_quick), 1, true));
+	ActionManager::session_sensitive_actions.push_back (act);
+	ActionManager::write_sensitive_actions.push_back (act);
+	ActionManager::rec_sensitive_actions.push_back (act);
+
 	act = ActionManager::register_action (main_actions, X_("duplicate-routes"), _("Duplicate Tracks/Busses..."),
 	                                      sigc::mem_fun(*this, &ARDOUR_UI::start_duplicate_routes));
 	ActionManager::session_sensitive_actions.push_back (act);

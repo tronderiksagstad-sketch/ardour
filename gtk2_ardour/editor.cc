@@ -352,6 +352,10 @@ Editor::Editor ()
 	, no_save_instant (false)
 	, current_timefx (nullptr)
 	, current_mixer_strip (nullptr)
+	, _add_drag_active (false)
+	, _add_drag_start_y (0)
+	, _add_drag_count (0)
+	, _add_drag_stereo (false)
 	, show_editor_mixer_when_tracks_arrive (false)
 	,  nudge_clock (new AudioClock (X_("nudge"), false, X_("nudge"), true, false, true))
 	, current_stepping_trackview (nullptr)
@@ -464,9 +468,8 @@ Editor::Editor ()
 	_group_tabs = new EditorGroupTabs (*this);
 	controls_layout.add (edit_controls_vbox);
 
-	if (UIConfiguration::instance().get_render_plus_hints ()) {
-		controls_layout.signal_expose_event ().connect (sigc::bind (sigc::ptr_fun (&ArdourWidgets::ArdourIcon::expose_with_text), &controls_layout, ArdourWidgets::ArdourIcon::ShadedPlusSign, _("Right-click\nor Double-click here\nto add Track, Bus,\n or VCA.")));
-	}
+	/* the "drag down here" hint, or the outlines of tracks being added */
+	controls_layout.signal_expose_event ().connect (sigc::mem_fun (*this, &Editor::draw_add_drag));
 
 	HSeparator* separator = manage (new HSeparator());
 	separator->set_name("TrackSeparator");
@@ -475,7 +478,9 @@ Editor::Editor ()
 	edit_controls_vbox.pack_end (*separator, false, false);
 
 	controls_layout.set_name ("EditControlsBase");
-	controls_layout.add_events (Gdk::BUTTON_PRESS_MASK|Gdk::BUTTON_RELEASE_MASK|Gdk::ENTER_NOTIFY_MASK|Gdk::LEAVE_NOTIFY_MASK|Gdk::SCROLL_MASK);
+	controls_layout.add_events (Gdk::BUTTON_PRESS_MASK|Gdk::BUTTON_RELEASE_MASK|Gdk::ENTER_NOTIFY_MASK|Gdk::LEAVE_NOTIFY_MASK|Gdk::SCROLL_MASK|Gdk::BUTTON1_MOTION_MASK);
+	controls_layout.signal_motion_notify_event().connect (sigc::mem_fun(*this, &Editor::edit_controls_motion));
+
 	controls_layout.signal_button_press_event().connect (sigc::mem_fun(*this, &Editor::edit_controls_button_event));
 	controls_layout.signal_button_release_event().connect (sigc::mem_fun(*this, &Editor::edit_controls_button_event));
 	controls_layout.signal_scroll_event().connect (sigc::mem_fun(*this, &Editor::control_layout_scroll), false);
@@ -3451,11 +3456,147 @@ Editor::edit_controls_button_event (GdkEventButton* ev)
 		return true;
 	}
 
+	if (ev->type == GDK_BUTTON_RELEASE && ev->button == 1 && _add_drag_active) {
+		const uint32_t n      = _add_drag_count;
+		const bool     stereo = _add_drag_stereo;
+		cancel_add_drag ();
+		if (n > 0) {
+			ARDOUR_UI::instance()->add_audio_tracks_quick (n, stereo);
+		}
+		return true;
+	}
+
+	if (ev->type == GDK_BUTTON_PRESS && ev->button == 1 && _session && !track_dragging ()) {
+		/* maybe the start of a drag to add tracks */
+		_add_drag_active  = true;
+		_add_drag_start_y = ev->y;
+		_add_drag_count   = 0;
+		_add_drag_stereo  = Keyboard::modifier_state_contains (ev->state, Keyboard::TertiaryModifier);
+	}
+
 	if ((ev->type == GDK_2BUTTON_PRESS && ev->button == 1) || (ev->type == GDK_BUTTON_RELEASE && Keyboard::is_context_menu_event (ev))) {
 		ARDOUR_UI::instance()->add_route ();
 	} else if (ev->button == 1 && ev->type == GDK_BUTTON_PRESS) {
 		selection->clear_tracks ();
 	}
+	return true;
+}
+
+void
+Editor::update_add_drag (double y, guint state)
+{
+	const double   row  = TimeAxisView::preset_height (HeightNormal);
+	const double   dy   = y - _add_drag_start_y;
+	const uint32_t n    = dy < 12 ? 0 : std::min<uint32_t> (64, 1 + (uint32_t) floor ((dy - 12) / row));
+	const bool     st   = Keyboard::modifier_state_contains (state, Keyboard::TertiaryModifier);
+
+	if (n != _add_drag_count || st != _add_drag_stereo) {
+		_add_drag_count  = n;
+		_add_drag_stereo = st;
+		controls_layout.queue_draw ();
+	}
+}
+
+bool
+Editor::edit_controls_motion (GdkEventMotion* ev)
+{
+	if (!_add_drag_active) {
+		return false;
+	}
+	update_add_drag (ev->y, ev->state);
+	return true;
+}
+
+void
+Editor::cancel_add_drag ()
+{
+	if (!_add_drag_active) {
+		return;
+	}
+	_add_drag_active = false;
+	_add_drag_count  = 0;
+	controls_layout.queue_draw ();
+}
+
+/* Draw the outlines of the tracks that will be added, and a count */
+bool
+Editor::draw_add_drag (GdkEventExpose* ev)
+{
+	if (!_add_drag_active || _add_drag_count == 0) {
+		if (UIConfiguration::instance().get_render_plus_hints ()) {
+			return ArdourWidgets::ArdourIcon::expose_with_text (ev, &controls_layout, ArdourWidgets::ArdourIcon::ShadedPlusSign,
+			                                                     _("Drag down here\nto add audio tracks\n(hold Shift for stereo)\n\nDouble-click for\nmore options"));
+		}
+		return false;
+	}
+
+	Glib::RefPtr<Gdk::Window> win = controls_layout.get_bin_window ();
+	if (!win) {
+		return false;
+	}
+
+	Cairo::RefPtr<Cairo::Context> cr = win->create_cairo_context ();
+	cr->rectangle (ev->area.x, ev->area.y, ev->area.width, ev->area.height);
+	cr->clip ();
+
+	const double   row    = TimeAxisView::preset_height (HeightNormal);
+	const double   width  = controls_layout.get_allocation ().get_width ();
+	const double   top    = edit_controls_vbox.get_allocation ().get_height ();
+	const uint32_t accent = UIConfiguration::instance ().color ("gtk_bg_selected");
+	const uint32_t fill   = UIConfiguration::instance ().color ("widget:blue darker");
+	const uint32_t text   = UIConfiguration::instance ().color ("gtk_foreground");
+
+	Glib::RefPtr<Pango::Layout> layout = Pango::Layout::create (controls_layout.get_pango_context ());
+	Pango::FontDescription bold = UIConfiguration::instance ().get_NormalFont ();
+	bold.set_weight (Pango::WEIGHT_BOLD);
+	layout->set_font_description (bold);
+
+	const std::string kind = _add_drag_stereo ? _("Stereo") : _("Mono");
+	std::vector<double> dash;
+	dash.push_back (4);
+	dash.push_back (3);
+
+	for (uint32_t i = 0; i < _add_drag_count; ++i) {
+		const double y = top + i * row;
+		Gtkmm2ext::rounded_rectangle (cr, 4.5, y + 2.5, width - 9, row - 5, 5);
+		Gtkmm2ext::set_source_rgba (cr, fill);
+		cr->fill_preserve ();
+		cr->set_dash (dash, 0);
+		cr->set_line_width (1);
+		Gtkmm2ext::set_source_rgba (cr, accent);
+		cr->stroke ();
+		cr->unset_dash ();
+
+		layout->set_text (string_compose (_("New audio track (%1)"), kind));
+		int tw, th;
+		layout->get_pixel_size (tw, th);
+		cr->move_to (14, y + 0.5 * (row - th));
+		Gtkmm2ext::set_source_rgba (cr, text);
+		pango_cairo_show_layout (cr->cobj (), layout->gobj ());
+	}
+
+	/* the count, kept inside the visible part of the list */
+	const std::string what = string_compose (P_("%1 %2 track", "%1 %2 tracks", _add_drag_count), _add_drag_count,
+	                                         _add_drag_stereo ? _("stereo") : _("mono"));
+	const std::string hint = _add_drag_stereo ? _("release Shift for mono · drag up to cancel")
+	                                          : _("hold Shift for stereo · drag up to cancel");
+	layout->set_markup (string_compose ("%1\n<span size=\"smaller\" weight=\"normal\">%2</span>",
+	                                    Gtkmm2ext::markup_escape_text (what), Gtkmm2ext::markup_escape_text (hint)));
+	int tw, th;
+	layout->get_pixel_size (tw, th);
+	const double vis_bottom = vertical_adjustment.get_value () + vertical_adjustment.get_page_size ();
+	double by = std::min (top + _add_drag_count * row + 6, vis_bottom - th - 18);
+	by = std::max (by, top + 6);
+	Gtkmm2ext::rounded_rectangle (cr, 6.5, by, std::min (width - 13, (double) tw + 20), th + 12, 6);
+	Gtkmm2ext::set_source_rgba (cr, UIConfiguration::instance ().color ("widget:bg"));
+	cr->fill_preserve ();
+	Gtkmm2ext::set_source_rgba (cr, accent);
+	cr->set_line_width (1);
+	cr->stroke ();
+	cr->move_to (16, by + 6);
+	Gtkmm2ext::set_source_rgba (cr, text);
+	pango_cairo_show_layout (cr->cobj (), layout->gobj ());
+
 	return true;
 }
 

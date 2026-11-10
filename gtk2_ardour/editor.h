@@ -2000,6 +2000,17 @@ private:
 	void update_tool_button_labels ();
 	void set_track_meters_visible ();
 	void set_track_level_bars_visible ();
+
+	/* Press and drag down in the empty area below the tracks to add
+	 * that many audio tracks (Shift: stereo). */
+	bool     _add_drag_active;
+	double   _add_drag_start_y;
+	uint32_t _add_drag_count;
+	bool     _add_drag_stereo;
+	bool     edit_controls_motion (GdkEventMotion*);
+	bool     draw_add_drag (GdkEventExpose*);
+	void     update_add_drag (double y, guint state);
+	void     cancel_add_drag ();
 	void update_inspector_header ();
 	bool show_editor_mixer_when_tracks_arrive;
 	Gtk::VBox current_mixer_strip_vbox;

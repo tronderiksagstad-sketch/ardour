@@ -2792,6 +2792,29 @@ ARDOUR_UI::add_route ()
 }
 
 void
+ARDOUR_UI::add_audio_tracks_quick (uint32_t how_many, bool stereo)
+{
+	if (!_session || how_many == 0) {
+		return;
+	}
+
+	const int32_t in_chans = stereo ? 2 : 1;
+	int32_t       out_chans;
+
+	if (Config->get_output_auto_connect () & AutoConnectMaster) {
+		out_chans = _session->master_out () ? _session->master_out ()->n_inputs ().n_audio () : in_chans;
+	} else {
+		out_chans = in_chans;
+	}
+
+	DisplaySuspender                  ds;
+	Session::ProcessorChangeBlocker pcb (_session);
+
+	session_add_audio_route (true, in_chans, out_chans, ARDOUR::Normal, std::shared_ptr<RouteGroup> (), how_many,
+	                         string (), Config->get_strict_io (), PresentationInfo::max_order, false);
+}
+
+void
 ARDOUR_UI::add_route_dialog_response (int r)
 {
 	if (!_session) {
