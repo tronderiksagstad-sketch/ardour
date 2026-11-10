@@ -18,3 +18,7 @@ Working branch: `memlock-fix-and-theme`.
 - Mockups live on the "Ardour Redesign" design canvas (claude.ai artifact P4iXDk1Sf91eiqX8BgmCu7); agree the design there before changing code.
 - Then implement in the C++ code, build with `./waf`, run under Xvfb with the Dummy backend to check on screen, and push to the working branch.
 - Shallow clones need a local annotated version tag (e.g. `git tag -a 9.8 -m local <base>`) for `./waf configure`; never push that tag.
+
+## Notes
+
+- `notes/cubase-comparison.md`: Ardour vs Cubase feature list, with the gaps worth filling.
