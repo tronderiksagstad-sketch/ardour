@@ -56,6 +56,7 @@
 
 #include "application_bar.h"
 #include "ardour_ui.h"
+#include "command_palette.h"
 #include "public_editor.h"
 #include "audio_clock.h"
 #include "keyboard.h"
@@ -785,6 +786,8 @@ ARDOUR_UI::install_dependent_actions ()
 
 	ActionManager::register_action (common_actions, X_("show-editor"), _("Show Editor"), sigc::bind (sigc::mem_fun (*this, &ARDOUR_UI::show_tabbable), editor));
 	ActionManager::register_action (common_actions, X_("show-mixer"), _("Show Mixer"), sigc::bind (sigc::mem_fun (*this, &ARDOUR_UI::show_tabbable), mixer));
+	/* Ctrl+Space: search and run any command, jump to a track or marker, add a plugin */
+	ActionManager::register_action (common_actions, X_("command-palette"), _("Search..."), sigc::ptr_fun (&CommandPalette::toggle));
 	ActionManager::register_action (common_actions, X_("show-preferences"), _("Show"), sigc::bind (sigc::mem_fun (*this, &ARDOUR_UI::show_tabbable), rc_option_editor));
 	ActionManager::register_action (common_actions, X_("show-recorder"), _("Show Recorder"), sigc::bind (sigc::mem_fun (*this, &ARDOUR_UI::show_tabbable), recorder));
 	ActionManager::register_action (common_actions, X_("show-trigger"), _("Show Cues"), sigc::bind (sigc::mem_fun (*this, &ARDOUR_UI::show_tabbable), trigger_page));

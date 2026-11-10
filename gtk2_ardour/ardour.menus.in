@@ -208,6 +208,8 @@
     </menu>
 
     <menu name='Edit' action='Edit'>
+      <menuitem action='command-palette'/>
+      <separator/>
       <menuitem action='EditorEditing/undo'/>
       <menuitem action='EditorEditing/redo'/>
       <separator/>
