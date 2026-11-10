@@ -45,6 +45,7 @@
 
 #include "temporal/domain_provider.h"
 
+#include "ardour/types.h"
 #include "ardour/utils.h"
 
 #include "ardour_dialog.h"
@@ -85,6 +86,11 @@ public:
 
 	uint32_t master_channel_count();
 	void on_show ();
+
+	/** sample rate picked for a new session, or 0 when opening one */
+	uint32_t session_sample_rate () const;
+	/** bit depth picked for a new session */
+	ARDOUR::SampleFormat session_sample_format () const { return _chosen_format; }
 
 	void clear_name ();
 	bool was_new_name_edited() const { return new_name_was_edited; }
@@ -299,6 +305,38 @@ private:
 	bool demo_dl_timer_callback (PBD::Downloader*, Gtk::TreePath);
 	bool deploy_demo_session ();
 	void set_downloading (bool);
+
+	/* Simplified start window: a left panel with "New session",
+	 * "Browse..." and the five most recent sessions (one click opens),
+	 * and a single-column new-session form on the right.
+	 */
+	Gtk::VBox  _left_panel;
+	Gtk::VBox  _recent_list_box;
+	Gtk::Label _recent_heading;
+	void build_left_panel ();
+	void fill_recent_list ();
+	void open_recent_path (std::string const& fullpath, bool safe_mode);
+	bool start_key_press (GdkEventKey*);
+
+	Gtk::VBox _template_radio_box;
+	std::vector<ArdourWidgets::ArdourButton*> _template_buttons;
+	void rebuild_template_buttons ();
+	void template_button_clicked (std::string path);
+	void sync_template_buttons ();
+
+	std::vector<ArdourWidgets::ArdourButton*> _rate_buttons;
+	std::vector<uint32_t> _rates;
+	uint32_t _chosen_rate;
+	void rate_clicked (uint32_t);
+
+	std::vector<ArdourWidgets::ArdourButton*> _depth_buttons;
+	std::vector<ARDOUR::SampleFormat> _formats;
+	ARDOUR::SampleFormat _chosen_format;
+	void depth_clicked (ARDOUR::SampleFormat);
+
+	ArdourWidgets::ArdourButton _create_button;
+	int64_t _ignore_browser_selection_until;
+	void browser_folder_changed ();
 
 	/* always there */
 

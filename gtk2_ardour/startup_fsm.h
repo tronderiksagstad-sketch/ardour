@@ -75,6 +75,7 @@ class StartupFSM : public sigc::trackable
 	std::string          session_template;
 	Temporal::TimeDomain session_domain;
 	int                  session_existing_sample_rate;
+	ARDOUR::SampleFormat session_sample_format; ///< bit depth chosen for a new session
 	XMLNode              session_engine_hints;
 	bool                 session_is_new;
 	bool                 session_name_edited;

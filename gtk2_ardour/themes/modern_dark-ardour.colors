@@ -440,8 +440,8 @@
     <ColorAlias name="summary: view rect" alias="neutral:foregroundest"/>
     <ColorAlias name="sync mark" alias="theme:contrasting clock"/>
     <ColorAlias name="tab button: fill" alias="widget:bg"/>
-    <ColorAlias name="tab button: fill active" alias="neutral:midground"/>
-    <ColorAlias name="tab button: led active" alias="alert:red"/>
+    <ColorAlias name="tab button: fill active" alias="theme:highlight"/>
+    <ColorAlias name="tab button: led active" alias="alert:blue"/>
     <ColorAlias name="tempo bar" alias="neutral:background2"/>
     <ColorAlias name="tempo curve" alias="widget:blue"/>
     <ColorAlias name="tempo marker" alias="widget:orange"/>

@@ -667,6 +667,10 @@ ARDOUR_UI::load_session_from_startup_fsm ()
 		if (build_session (session_path, session_name, session_template, bus_profile, true, session_was_not_named, session_domain)) {
 			return -1;
 		}
+		if (_session) {
+			/* bit depth chosen in the new-session form */
+			_session->config.set_native_file_data_format (startup_fsm->session_sample_format);
+		}
 		return 0;
 	}
 

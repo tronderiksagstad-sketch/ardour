@@ -34,6 +34,9 @@
 #include <ytkmm/cellrendererprogress.h>
 #include <ytkmm/filechooser.h>
 #include <ytkmm/stock.h>
+#include <ytkmm/alignment.h>
+#include <ytkmm/drawingarea.h>
+#include <ytkmm/eventbox.h>
 
 #include "pbd/basename.h"
 #include "pbd/downloader.h"
@@ -43,9 +46,14 @@
 #include "pbd/whitespace.h"
 #include "pbd/stl_delete.h"
 #include "pbd/openuri.h"
+#include "pbd/xml++.h"
+
+#include "temporal/superclock.h"
+#include "temporal/timeline.h"
 
 #include "gtkmm2ext/utils.h"
 #include "gtkmm2ext/keyboard.h"
+#include "gtkmm2ext/colors.h"
 
 #include "widgets/tooltips.h"
 
@@ -71,6 +79,7 @@
 #include "pbd/i18n.h"
 #include "ui_config.h"
 #include "utils.h"
+#include "gtk2ardour-version.h"
 
 using namespace std;
 using namespace Gtk;
@@ -81,6 +90,214 @@ using namespace ARDOUR;
 using namespace ArdourWidgets;
 using namespace ARDOUR_UI_UTILS;
 
+namespace {
+
+/* Colours used for the little picture next to each recent session. */
+const Gtkmm2ext::Color recent_palette[] = { 0x4fd1a5ff, 0xf2a03dff, 0x5aa9ffff, 0xe5c84aff, 0xb48cffff };
+
+/** One row in the start window's "Recent" list: a coloured waveform
+ * picture, the session name and a line of details. A single click opens
+ * the session; Ctrl-click opens it with all plugins disabled (safe mode).
+ */
+class RecentSessionRow : public Gtk::EventBox
+{
+public:
+	RecentSessionRow (std::string const& name, std::string const& details, std::string const& tip, Gtkmm2ext::Color color)
+		: _color (color)
+		, _seed (std::hash<std::string> () (name))
+	{
+		set_can_focus (true);
+		add_events (Gdk::BUTTON_PRESS_MASK | Gdk::BUTTON_RELEASE_MASK | Gdk::ENTER_NOTIFY_MASK | Gdk::LEAVE_NOTIFY_MASK | Gdk::KEY_PRESS_MASK);
+
+		const float scale = UIConfiguration::instance ().get_ui_scale ();
+		_thumb.set_size_request (rintf (112 * scale), rintf (68 * scale));
+		_thumb.signal_expose_event ().connect (sigc::mem_fun (*this, &RecentSessionRow::thumb_expose));
+
+		_name.set_markup (string_compose ("<span size=\"large\" weight=\"bold\">%1</span>", Gtkmm2ext::markup_escape_text (name)));
+		_name.set_alignment (0.0, 0.5);
+		_name.set_ellipsize (Pango::ELLIPSIZE_END);
+		_details.set_markup (string_compose ("<span alpha=\"65%%\">%1</span>", Gtkmm2ext::markup_escape_text (details)));
+		_details.set_alignment (0.0, 0.5);
+		_details.set_ellipsize (Pango::ELLIPSIZE_END);
+
+		Gtk::VBox* labels = manage (new Gtk::VBox);
+		labels->set_spacing (4);
+		labels->pack_start (_name, false, false);
+		labels->pack_start (_details, false, false);
+
+		Gtk::Alignment* lalign = manage (new Gtk::Alignment (0.0, 0.5, 1.0, 0.0));
+		lalign->add (*labels);
+
+		Gtk::Alignment* talign = manage (new Gtk::Alignment (0.5, 0.5, 0.0, 0.0));
+		talign->add (_thumb);
+
+		_box.set_spacing (16);
+		_box.set_border_width (6);
+		_box.pack_start (*talign, false, false);
+		_box.pack_start (*lalign, true, true);
+		add (_box);
+
+		set_tooltip (*this, tip + "\n\n" + _("Click to open. Ctrl-click to open with all plugins disabled."));
+		show_all ();
+	}
+
+	/** emitted with true when the session should be opened in safe mode */
+	sigc::signal<void, bool> Activated;
+
+private:
+	Gtk::HBox        _box;
+	Gtk::DrawingArea _thumb;
+	Gtk::Label       _name;
+	Gtk::Label       _details;
+	Gtkmm2ext::Color _color;
+	size_t           _seed;
+
+	bool on_enter_notify_event (GdkEventCrossing*)
+	{
+		modify_bg (Gtk::STATE_NORMAL, Gtkmm2ext::gdk_color_from_rgba (UIConfiguration::instance ().color ("generic button: fill")));
+		return false;
+	}
+
+	bool on_leave_notify_event (GdkEventCrossing*)
+	{
+		unset_bg (Gtk::STATE_NORMAL);
+		return false;
+	}
+
+	bool on_button_release_event (GdkEventButton* ev)
+	{
+		if (ev->button == 1) {
+			Activated (Gtkmm2ext::Keyboard::modifier_state_equals (ev->state, Gtkmm2ext::Keyboard::PrimaryModifier));
+			return true;
+		}
+		return false;
+	}
+
+	bool on_key_press_event (GdkEventKey* ev)
+	{
+		if (ev->keyval == GDK_Return || ev->keyval == GDK_KP_Enter || ev->keyval == GDK_space) {
+			Activated (false);
+			return true;
+		}
+		return Gtk::EventBox::on_key_press_event (ev);
+	}
+
+	bool thumb_expose (GdkEventExpose*)
+	{
+		Cairo::RefPtr<Cairo::Context> cr = _thumb.get_window ()->create_cairo_context ();
+		const double w = _thumb.get_width ();
+		const double h = _thumb.get_height ();
+
+		Gtkmm2ext::rounded_rectangle (cr, 0, 0, w, h, 7);
+		Gtkmm2ext::set_source_rgb_a (cr, _color, 0.14);
+		cr->fill ();
+
+		/* a decorative waveform, the same for the same session name */
+		uint64_t s = _seed;
+		auto rnd = [&s] () { s = s * 6364136223846793005ULL + 1442695040888963407ULL; return (double) ((s >> 33) & 0xffff) / 65535.0; };
+		const int    n   = 40;
+		const double mid = h * 0.5;
+		std::vector<double> amp (n + 1);
+		for (int i = 0; i <= n; ++i) {
+			const double env = 0.4 + 0.6 * fabs (sin (i * 0.45 + (_seed & 7)));
+			amp[i] = (0.08 + 0.34 * rnd () * env) * h;
+		}
+		cr->move_to (0, mid - amp[0]);
+		for (int i = 1; i <= n; ++i) {
+			cr->line_to (w * i / n, mid - amp[i]);
+		}
+		for (int i = n; i >= 0; --i) {
+			cr->line_to (w * i / n, mid + amp[i]);
+		}
+		cr->close_path ();
+		Gtkmm2ext::set_source_rgb_a (cr, _color, 0.85);
+		cr->fill ();
+		return true;
+	}
+};
+
+/** "Today, 14:32", "Yesterday, 09:10", "3 Nov" or "3 Nov 2024" */
+std::string
+friendly_date (int64_t when)
+{
+	Glib::DateTime t     = Glib::DateTime::create_now_local (when);
+	Glib::DateTime now   = Glib::DateTime::create_now_local ();
+	const int      days  = now.get_day_of_year () - t.get_day_of_year () + 366 * (now.get_year () - t.get_year ());
+
+	if (days == 0) {
+		return string_compose (_("Today, %1"), t.format ("%H:%M"));
+	} else if (days == 1) {
+		return string_compose (_("Yesterday, %1"), t.format ("%H:%M"));
+	} else if (t.get_year () == now.get_year ()) {
+		return t.format ("%-d %b");
+	}
+	return t.format ("%-d %b %Y");
+}
+
+/** Read the session length and number of tracks from a session file.
+ * Leaves the values at -1 when they can't be found. */
+void
+read_session_summary (std::string const& path, double& seconds, int& tracks)
+{
+	seconds = -1;
+	tracks  = -1;
+
+	XMLTree tree;
+	if (!tree.read (path) || !tree.root ()) {
+		return;
+	}
+
+	XMLNode const* root = tree.root ();
+
+	/* positions are stored in the session's own time unit */
+	superclock_t ticks_per_second = 282240000;
+	if (XMLNode const* tm = root->child (X_("TempoMap"))) {
+		superclock_t sc;
+		if (tm->get_property (X_("superclocks-per-second"), sc) && sc > 0) {
+			ticks_per_second = sc;
+		}
+	}
+
+	if (XMLNode const* locs = root->child (X_("Locations"))) {
+		for (XMLNode const* loc : locs->children ()) {
+			std::string flags;
+			if (loc->name () != X_("Location") || !loc->get_property (X_("flags"), flags) || flags.find (X_("IsSessionRange")) == std::string::npos) {
+				continue;
+			}
+			std::string a, b;
+			Temporal::timepos_t start, end;
+			if (loc->get_property (X_("start"), a) && loc->get_property (X_("end"), b) && start.string_to (a) && end.string_to (b)
+			    && start.is_superclock () && end.is_superclock () && end.val () > start.val ()) {
+				seconds = (double) (end.val () - start.val ()) / ticks_per_second;
+			}
+			break;
+		}
+	}
+
+	if (XMLNode const* routes = root->child (X_("Routes"))) {
+		tracks = 0;
+		for (XMLNode const* route : routes->children ()) {
+			XMLNode const* pi = route->child (X_("PresentationInfo"));
+			std::string    flags;
+			if (pi && pi->get_property (X_("flags"), flags) && (flags.find (X_("AudioTrack")) != std::string::npos || flags.find (X_("MidiTrack")) != std::string::npos)) {
+				++tracks;
+			}
+		}
+	}
+}
+
+std::string
+format_length (double seconds)
+{
+	const int t = (int) rint (std::min (seconds, 999.0 * 3600));
+	if (t >= 3600) {
+		return string_compose ("%1:%2:%3", t / 3600, PBD::to_string ((t / 60) % 60).insert (0, (t / 60) % 60 < 10 ? "0" : ""), PBD::to_string (t % 60).insert (0, t % 60 < 10 ? "0" : ""));
+	}
+	return string_compose ("%1:%2", t / 60, PBD::to_string (t % 60).insert (0, t % 60 < 10 ? "0" : ""));
+}
+
+} // anonymous namespace
+
 SessionDialog::SessionDialog (DialogTab initial_tab, const std::string& session_name, const std::string& session_path, const std::string& template_name, bool cancel_not_quit)
 	: ArdourDialog (initial_tab == New ? _("Session Setup") : _("Recent Sessions"), true, true)
 	, _initial_tab (initial_tab)
@@ -89,6 +306,9 @@ SessionDialog::SessionDialog (DialogTab initial_tab, const std::string& session_
 	, demo_folder_chooser (FILE_CHOOSER_ACTION_SELECT_FOLDER)
 	, demo_name_was_edited (false)
 	, download_active (false)
+	, _chosen_rate (48000)
+	, _chosen_format (FormatFloat)
+	, _ignore_browser_selection_until (0)
 {
 	action_group = ActionGroup::create (X_("SessionDialog"));
 
@@ -110,51 +330,25 @@ SessionDialog::SessionDialog (DialogTab initial_tab, const std::string& session_
 	Searchpath rc (ARDOUR::ardour_data_search_path());
 	rc.add_subdirectory_to_paths ("resources");
 
-	new_button.set_text (_("NEW"));
+	/* The two things the start window offers, besides the recent list */
+	new_button.set_text (string_compose ("%1    <span alpha=\"55%%\" size=\"smaller\">%2</span>", _("New session"), _("Ctrl+N")), true);
 	new_button.set_name ("tab button");
-	new_button.set_tweaks(ArdourButton::Tweaks(ArdourButton::ForceFlat));
-	if (Config->get_demo_session_index_url ().empty ()) {
-		new_button.set_corner_mask(ArdourButton::BOTTOM);
-	} else {
-		new_button.set_corner_mask(ArdourButton::NONE);
-	}
+	new_button.set_alignment (0.0, 0.5);
+	new_button.set_corner_radius (6);
 	new_button.set_can_focus (true);
 	new_button.set_related_action (new_session_action);
 
-	recent_button.set_text (_("RECENT"));
-	recent_button.set_name ("tab button");
-	recent_button.set_tweaks(ArdourButton::Tweaks(ArdourButton::ForceFlat));
-	recent_button.set_corner_mask(ArdourButton::TOP);
-	recent_button.set_border_mask(ArdourButton::HIDE_BOTTOM);
-	recent_button.set_can_focus (true);
-	recent_button.set_related_action (recent_session_action);
-
-	existing_button.set_text (_("OPEN"));
+	existing_button.set_text (string_compose ("%1    <span alpha=\"55%%\" size=\"smaller\">%2</span>", _("Browse..."), _("Ctrl+O")), true);
 	existing_button.set_name ("tab button");
-	existing_button.set_tweaks(ArdourButton::Tweaks(ArdourButton::ForceFlat));
-	existing_button.set_corner_mask(ArdourButton::NONE);
-	existing_button.set_border_mask(ArdourButton::HIDE_BOTTOM);
+	existing_button.set_alignment (0.0, 0.5);
+	existing_button.set_corner_radius (6);
 	existing_button.set_can_focus (true);
 	existing_button.set_related_action (existing_session_action);
 
-	demo_button.set_text (_("DEMO\nSessions"));
-	demo_button.set_name ("tab button");
-	demo_button.set_tweaks(ArdourButton::Tweaks(ArdourButton::ForceFlat));
-	demo_button.set_corner_mask(ArdourButton::BOTTOM);
-	demo_button.set_border_mask(ArdourButton::HIDE_TOP);
-	demo_button.set_can_focus (true);
+	/* kept for the code that still refers to them, but not shown */
+	recent_button.set_related_action (recent_session_action);
 	demo_button.set_related_action (demo_session_action);
-
-	prefs_button.set_text(_("SETTINGS"));
-	prefs_button.set_name ("tab button");
 	prefs_button.signal_button_press_event().connect (sigc::mem_fun (*this, &SessionDialog::prefs_button_pressed), false);
-	prefs_button.set_tweaks(ArdourButton::Tweaks(ArdourButton::ForceFlat));
-
-	Glib::RefPtr<SizeGroup> grp = SizeGroup::create (Gtk::SIZE_GROUP_BOTH);
-	grp->add_widget(new_button);
-	grp->add_widget(recent_button);
-	grp->add_widget(existing_button);
-	grp->add_widget(demo_button);
 
 	int top = 0;
 	int row = 0;
@@ -188,35 +382,13 @@ SessionDialog::SessionDialog (DialogTab initial_tab, const std::string& session_
 	}
 #endif
 
-	if (find_file (rc, PROGRAM_NAME "-small-splash.png", image_path)) {
-		Gtk::Image* image;
-		if ((image = manage (new Gtk::Image (image_path))) != 0) {
-			_open_table.attach (*image, 0,1,  row , row + 1, FILL, FILL); ++row;
-			grp->add_widget (*image);
-		}
-	}
+	build_left_panel ();
 
-#if !defined (LIVETRAX) && !defined (VBM)
-	Label *spacer = manage (new Label());
-	spacer->set_size_request(3, 3);
-	_open_table.attach (*spacer,           0,1, row, row + 1, FILL, FILL); ++row;
-#endif
-
-	_open_table.attach (recent_button,     0,1, row, row + 1, FILL, FILL); ++row;
-	_open_table.attach (existing_button,   0,1, row, row + 1, FILL, FILL); ++row;
-	_open_table.attach (new_button,        0,1, row, row + 1, FILL, FILL); ++row;
-	if (!Config->get_demo_session_index_url ().empty ()) {
-		_open_table.attach (demo_button,     0,1, row, row + 1, FILL, FILL); ++row;
-	}
-
-	Label *vblank = manage (new Label());
-	vblank->set_size_request(1, 1);
-	_open_table.attach (*vblank,           0,1, row, row + 1, FILL, FILL|EXPAND, 0, 0); ++row;
-
+	_open_table.attach (_left_panel,       0,1, top, row + 1, FILL,        FILL|EXPAND, 0, 0);
 	Label *vspacer = manage (new Label());
-	vspacer->set_size_request(8, -1);
-	_open_table.attach (*vspacer,          1,2, top, row, FILL,        FILL|EXPAND, 0, 0);
-	_open_table.attach (_tabs,             2,3, top, row, FILL|EXPAND, FILL|EXPAND, 0, 0);
+	vspacer->set_size_request(16, -1);
+	_open_table.attach (*vspacer,          1,2, top, row + 1, FILL,        FILL|EXPAND, 0, 0);
+	_open_table.attach (_tabs,             2,3, top, row + 1, FILL|EXPAND, FILL|EXPAND, 0, 0);
 
 	_tabs.set_show_tabs(false);
 	_tabs.set_show_border(false);
@@ -260,6 +432,10 @@ SessionDialog::SessionDialog (DialogTab initial_tab, const std::string& session_
 
 	get_action_area ()->add (*abx);
 #endif
+	get_action_area ()->set_no_show_all (true);
+	get_action_area ()->hide ();
+
+	signal_key_press_event ().connect (sigc::mem_fun (*this, &SessionDialog::start_key_press), false);
 
 	if (!template_name.empty()) {
 		load_template_override = template_name;
@@ -280,9 +456,11 @@ SessionDialog::SessionDialog (DialogTab initial_tab, const std::string& session_
 	recent_vbox.pack_start (recent_scroller, true, true);
 
 	get_vbox()->show_all ();
+	get_action_area ()->hide ();
 
 	if (recent_session_model) {
 		int cnt = redisplay_recent_sessions ();
+		fill_recent_list ();
 		if (cnt > 0) {
 			recent_scroller.show();
 			recent_label.show ();
@@ -307,16 +485,14 @@ SessionDialog::on_show ()
 	ArdourDialog::on_show ();
 
 	_tabs.set_current_page(4); // force change
-	switch (_initial_tab) {
-		case New:
-			_tabs.set_current_page(0);
-			break;
-		case Open:
-			_tabs.set_current_page(2);
-			break;
-		default:
-			_tabs.set_current_page(1);
-			break;
+	/* The start window always opens on the New session form (the
+	 * recent sessions are on the left, one click away), unless the
+	 * caller asked for the file browser.
+	 */
+	if (_initial_tab == Open) {
+		_tabs.set_current_page(2);
+	} else {
+		_tabs.set_current_page(0);
 	}
 }
 
@@ -345,6 +521,7 @@ SessionDialog::tab_page_switched(GtkNotebookPage*, guint page_number)
 			_disable_plugins.show ();
 			break;
 		case 2:
+			browser_folder_changed ();
 			existing_file_selected();
 			_disable_plugins.show ();
 			break;
@@ -605,6 +782,7 @@ SessionDialog::setup_existing_box ()
 	Gtkmm2ext::add_volume_shortcuts (existing_session_chooser);
 
 	existing_session_chooser.signal_selection_changed().connect (mem_fun (*this, &SessionDialog::existing_file_selected));
+	existing_session_chooser.signal_current_folder_changed().connect (mem_fun (*this, &SessionDialog::browser_folder_changed));
 	existing_session_chooser.signal_file_activated().connect (sigc::mem_fun (*this, &SessionDialog::existing_file_activated));
 }
 
@@ -658,6 +836,11 @@ SessionDialog::existing_file_selected ()
 	}
 
 	open_button->set_sensitive(true);  //still potentially openable; checks for session archives, .ptf, and .aaf will have to occur later
+
+	/* one click opens it */
+	if (g_get_monotonic_time () > _ignore_browser_selection_until) {
+		response (RESPONSE_ACCEPT);
+	}
 }
 
 void
@@ -833,32 +1016,43 @@ SessionDialog::populate_session_templates ()
 	if(first) {
 		template_chooser.get_selection()->select(first);
 	}
+
+	rebuild_template_buttons ();
+}
+
+/* A small bold caption above each field of the new-session form */
+static Gtk::Label*
+form_caption (std::string const& text)
+{
+	Gtk::Label* l = manage (new Gtk::Label);
+	l->set_markup (string_compose ("<span weight=\"bold\" alpha=\"80%%\">%1</span>", Gtkmm2ext::markup_escape_text (text)));
+	l->set_alignment (0.0, 0.5);
+	return l;
+}
+
+static Gtk::VBox*
+form_field (std::string const& caption, Gtk::Widget& w)
+{
+	Gtk::VBox* v = manage (new Gtk::VBox);
+	v->set_spacing (6);
+	v->pack_start (*form_caption (caption), false, false);
+	v->pack_start (w, false, false);
+	return v;
 }
 
 void
 SessionDialog::setup_new_session_page ()
 {
-	session_new_vbox.set_spacing (8);
-
-	Label* name_label = manage (new Label);
-	name_label->set_text (_("Session name:"));
-
-	HBox* name_hbox = manage (new HBox);
-	name_hbox->set_spacing (8);
-	name_hbox->pack_start (*name_label, false, true);
-	name_hbox->pack_start (new_name_entry, true, true);
+	/* One column, top to bottom: name, location, start from, sample
+	 * rate, bit depth, then "Create session". Everything else (time
+	 * domain, template descriptions, ...) uses its default and can be
+	 * changed later in Session > Properties.
+	 */
+	const float scale = UIConfiguration::instance ().get_ui_scale ();
 
 	new_name_entry.signal_key_press_event().connect (sigc::mem_fun (*this, &SessionDialog::name_edited), false);
 	new_name_entry.signal_changed().connect (sigc::mem_fun (*this, &SessionDialog::new_name_changed));
 	new_name_entry.signal_activate().connect (sigc::mem_fun (*this, &SessionDialog::new_name_activated));
-
-	//Folder location for the new session
-	Label* new_folder_label = manage (new Label);
-	new_folder_label->set_text (_("Create session folder in:"));
-	HBox* folder_box = manage (new HBox);
-	folder_box->set_spacing (8);
-	folder_box->pack_start (*new_folder_label, false, false);
-	folder_box->pack_start (new_folder_chooser, true, true);
 
 	if (ARDOUR_UI::instance()->the_session ()) {
 		// point the new session file chooser at the parent directory of the current session
@@ -880,81 +1074,182 @@ SessionDialog::setup_new_session_page ()
 	new_folder_chooser.set_title (_("Select folder for session"));
 	Gtkmm2ext::add_volume_shortcuts (new_folder_chooser);
 
-	//Timebase for the new session
-	Label* session_domain_label = manage (new Label);
-	session_domain_label->set_text (_("Default Time Domain:"));
-	HBox* timebase_box = manage (new HBox);
-	timebase_box->set_spacing (8);
-	timebase_box->pack_start (*session_domain_label, false, false);
-	timebase_box->pack_start (timebase_chooser, true, true);
-
+	/* Not shown: the time domain uses the preference default */
 	timebase_chooser.append (_("Audio Time"));
 	timebase_chooser.append (_("Beat Time"));
 	timebase_chooser.set_active (Config->get_preferred_time_domain() == Temporal::BeatTime ? 1 : 0);
 
-	set_tooltip (timebase_chooser, _(
-	"The time domain controls how some items on the timeline respond to tempo map editing.\n\n"
-	"If you choose Beat Time, some items (like markers) will move when you change tempo.\n\n"
-	"If you choose Audio Time, these items will not move when you change tempo.\n\n"
-	"The time domain also affects which ruler lanes will be initially visible.\n\n"
-	"You can change the session's timebase anytime in Session -> Properties."
-		));
-
-	//Template & Template Description area
-	HBox* template_hbox = manage (new HBox);
-
-	//if the "template override" is provided, don't give the user any template selections   (?)
-	if (load_template_override.empty()) {
-		template_hbox->set_spacing (8);
-
-		Gtk::ScrolledWindow *template_scroller = manage (new Gtk::ScrolledWindow());
-		template_scroller->set_policy (Gtk::POLICY_NEVER, Gtk::POLICY_AUTOMATIC);
-		template_scroller->add (template_chooser);
-
-		Gtk::ScrolledWindow *desc_scroller = manage (new Gtk::ScrolledWindow());
-		desc_scroller->set_policy (Gtk::POLICY_NEVER, Gtk::POLICY_AUTOMATIC);
-		desc_scroller->add (template_desc);
-
-		template_hbox->pack_start (*template_scroller, true, true);
-
-		template_desc_frame.set_name (X_("TextHighlightFrame"));
-		template_desc_frame.add (*desc_scroller);
-		template_hbox->pack_start (template_desc_frame, false, false);
-	}
-
-	//template_desc is the textview that displays the currently selected template's description
+	/* The template list is kept (hidden) as the record of which
+	 * template is chosen; the visible choice is a column of buttons.
+	 */
 	template_desc.set_editable (false);
-	template_desc.set_wrap_mode (Gtk::WRAP_WORD);
-	template_desc.set_size_request (200,300);
-	template_desc.set_name (X_("TextOnBackground"));
-	template_desc.set_border_width (6);
-
-	//template_chooser is the treeview showing available templates
 	template_model = TreeStore::create (session_template_columns);
 	template_chooser.set_model (template_model);
 	template_chooser.append_column (_("Template"), session_template_columns.name);
-#ifdef MIXBUS
-	template_chooser.append_column (_("Modified With"), session_template_columns.modified_with_short);
-	template_chooser.set_headers_visible (true);
-#else
-	template_chooser.set_headers_visible (false);  //there is only one column and its purpose should be obvious
-#endif
+	template_chooser.set_headers_visible (false);
 	template_chooser.get_selection()->set_mode (SELECTION_SINGLE);
 	template_chooser.get_selection()->signal_changed().connect (sigc::mem_fun (*this, &SessionDialog::template_row_selected));
-	template_chooser.signal_button_press_event ().connect (sigc::mem_fun (*this, &SessionDialog::template_button_press), false);
-	template_chooser.set_sensitive (true);
-	if (UIConfiguration::instance().get_use_tooltips()) {
-		template_chooser.set_tooltip_column(4); // modified_with_long
-	}
-	template_chooser.set_size_request (150,300);
+	_template_radio_box.set_spacing (6);
 
-	session_new_vbox.pack_start (*template_hbox, true, true);
-#ifndef LIVETRAX
-	session_new_vbox.pack_start (*timebase_box, false, true);
-#endif
-	session_new_vbox.pack_start (*folder_box, false, true);
-	session_new_vbox.pack_start (*name_hbox, false, true);
+	/* Sample rate: preselect what the audio interface is running at */
+	_rates = { 44100, 48000, 88200, 96000 };
+	if (AudioEngine::instance ()->running ()) {
+		const uint32_t sr = AudioEngine::instance ()->sample_rate ();
+		if (std::find (_rates.begin (), _rates.end (), sr) == _rates.end ()) {
+			_rates.push_back (sr);
+		}
+		_chosen_rate = sr;
+	}
+	Gtk::HBox* rate_box = manage (new Gtk::HBox (true, 4));
+	for (uint32_t r : _rates) {
+		ArdourButton* b = manage (new ArdourButton (rate_as_string (r)));
+		b->set_name ("tab button");
+		b->set_corner_radius (6);
+		b->signal_clicked.connect (sigc::bind (sigc::mem_fun (*this, &SessionDialog::rate_clicked), r));
+		if (AudioEngine::instance ()->running ()) {
+			/* a session started from a running engine uses its rate */
+			b->set_sensitive (false);
+			set_tooltip (*b, _("The audio interface is already running at this rate. Change it in Window > Audio/MIDI Setup."));
+		}
+		rate_box->pack_start (*b, true, true);
+		_rate_buttons.push_back (b);
+	}
+	rate_clicked (_chosen_rate);
+
+	/* Bit depth */
+	_formats = { FormatInt16, FormatInt24, FormatFloat };
+	Gtk::HBox* depth_box = manage (new Gtk::HBox (true, 4));
+	for (SampleFormat f : _formats) {
+		ArdourButton* b = manage (new ArdourButton (f == FormatInt16 ? _("16-bit") : f == FormatInt24 ? _("24-bit") : _("32-bit float")));
+		b->set_name ("tab button");
+		b->set_corner_radius (6);
+		b->signal_clicked.connect (sigc::bind (sigc::mem_fun (*this, &SessionDialog::depth_clicked), f));
+		depth_box->pack_start (*b, true, true);
+		_depth_buttons.push_back (b);
+	}
+	depth_clicked (_chosen_format);
+
+	/* Create */
+	_create_button.set_text (_("Create session"));
+	_create_button.set_name ("generic button");
+	_create_button.set_corner_radius (7);
+	_create_button.set_fixed_colors (UIConfiguration::instance ().color ("gtk_bg_selected"), UIConfiguration::instance ().color ("gtk_bg_selected"));
+	_create_button.set_size_request (-1, rintf (44 * scale));
+	_create_button.signal_clicked.connect (sigc::mem_fun (*this, &SessionDialog::new_name_activated));
+
+	Gtk::Label* heading = manage (new Gtk::Label);
+	heading->set_markup (string_compose ("<span size=\"x-large\" weight=\"bold\">%1</span>", _("New session")));
+	heading->set_alignment (0.0, 0.5);
+
+	Gtk::VBox* column = manage (new Gtk::VBox);
+	column->set_spacing (18);
+	column->set_size_request (rintf (460 * scale), -1);
+	column->pack_start (*heading, false, false);
+	column->pack_start (*form_field (_("Name"), new_name_entry), false, false);
+	column->pack_start (*form_field (_("Location"), new_folder_chooser), false, false);
+	if (load_template_override.empty ()) {
+		column->pack_start (*form_field (_("Start from"), _template_radio_box), false, false);
+	}
+	column->pack_start (*form_field (_("Sample rate"), *rate_box), false, false);
+	column->pack_start (*form_field (_("Bit depth"), *depth_box), false, false);
+	column->pack_start (_create_button, false, false, 6);
+
+	Gtk::Alignment* center = manage (new Gtk::Alignment (0.5, 0.0, 0.0, 0.0));
+	center->set_padding (rintf (16 * scale), rintf (16 * scale), 0, 0);
+	center->add (*column);
+
+	session_new_vbox.pack_start (*center, true, true);
 	session_new_vbox.show_all ();
+}
+
+uint32_t
+SessionDialog::session_sample_rate () const
+{
+	return const_cast<Gtk::Notebook&> (_tabs).get_current_page () == 0 ? _chosen_rate : 0;
+}
+
+void
+SessionDialog::rate_clicked (uint32_t r)
+{
+	_chosen_rate = r;
+	for (size_t i = 0; i < _rate_buttons.size (); ++i) {
+		_rate_buttons[i]->set_active_state (_rates[i] == r ? Gtkmm2ext::ExplicitActive : Gtkmm2ext::Off);
+	}
+}
+
+void
+SessionDialog::depth_clicked (SampleFormat f)
+{
+	_chosen_format = f;
+	for (size_t i = 0; i < _depth_buttons.size (); ++i) {
+		_depth_buttons[i]->set_active_state (_formats[i] == f ? Gtkmm2ext::ExplicitActive : Gtkmm2ext::Off);
+	}
+}
+
+/* One button per template ("Empty Template", the factory templates and
+ * any the user saved). Clicking one selects it in the hidden list. */
+void
+SessionDialog::rebuild_template_buttons ()
+{
+	for (ArdourButton* b : _template_buttons) {
+		_template_radio_box.remove (*b);
+		delete b;
+	}
+	_template_buttons.clear ();
+
+	const float scale = UIConfiguration::instance ().get_ui_scale ();
+
+	for (Gtk::TreeModel::iterator i = template_model->children ().begin (); i != template_model->children ().end (); ++i) {
+		std::string name = (*i)[session_template_columns.name];
+		std::string path = (*i)[session_template_columns.path];
+		std::string desc = (*i)[session_template_columns.description];
+
+		if (path.empty ()) {
+			name = _("Empty session");
+		}
+
+		ArdourButton* b = new ArdourButton (ArdourButton::led_default_elements);
+		b->set_text (name);
+		b->set_name ("tab button");
+		b->set_alignment (0.0, 0.5);
+		b->set_corner_radius (6);
+		b->set_led_left (true);
+		b->set_size_request (-1, rintf (38 * scale));
+		if (!desc.empty ()) {
+			set_tooltip (*b, desc);
+		}
+		b->signal_clicked.connect (sigc::bind (sigc::mem_fun (*this, &SessionDialog::template_button_clicked), path));
+		_template_radio_box.pack_start (*b, false, false);
+		b->show ();
+		_template_buttons.push_back (b);
+	}
+	sync_template_buttons ();
+}
+
+void
+SessionDialog::template_button_clicked (std::string path)
+{
+	for (Gtk::TreeModel::iterator i = template_model->children ().begin (); i != template_model->children ().end (); ++i) {
+		if (std::string ((*i)[session_template_columns.path]) == path) {
+			template_chooser.get_selection ()->select (i);
+			break;
+		}
+	}
+	sync_template_buttons ();
+}
+
+void
+SessionDialog::sync_template_buttons ()
+{
+	std::string selected = session_template_name ();
+	bool        any      = use_session_template ();
+	size_t      n        = 0;
+
+	for (Gtk::TreeModel::iterator i = template_model->children ().begin (); i != template_model->children ().end () && n < _template_buttons.size (); ++i, ++n) {
+		std::string path = (*i)[session_template_columns.path];
+		const bool  on   = any && path == selected;
+		_template_buttons[n]->set_active_state (on ? Gtkmm2ext::ExplicitActive : Gtkmm2ext::Off);
+	}
 }
 
 void
@@ -1083,14 +1378,19 @@ SessionDialog::new_name_changed ()
 	if (!new_name_entry.get_text().empty()) {
 		session_selected ();
 		open_button->set_sensitive (true);
+		_create_button.set_sensitive (true);
 	} else {
 		open_button->set_sensitive (false);
+		_create_button.set_sensitive (false);
 	}
 }
 
 void
 SessionDialog::new_name_activated ()
 {
+	if (new_name_entry.get_text ().empty ()) {
+		return;
+	}
 	response (RESPONSE_ACCEPT);
 }
 
@@ -1359,6 +1659,7 @@ SessionDialog::template_row_selected ()
 			template_desc.get_buffer()->set_text (s);
 		}
 	}
+	sync_template_buttons ();
 }
 
 void
@@ -1760,4 +2061,144 @@ SessionDialog::demo_dl_timer_callback (Downloader* dl, Gtk::TreePath treepath)
 	(*row)[demo_columns.downloading] = false;
 	delete dl;
 	return false;
+}
+
+/* ---- simplified start window ---------------------------------------- */
+
+void
+SessionDialog::build_left_panel ()
+{
+	const float scale = UIConfiguration::instance ().get_ui_scale ();
+
+	Gtk::Label* brand = manage (new Gtk::Label);
+	brand->set_markup (string_compose ("<span size=\"x-large\" weight=\"bold\">%1</span>\n<span alpha=\"60%%\">%2</span>",
+	                                   PROGRAM_NAME, string_compose (_("Version %1"), VERSIONSTRING)));
+	brand->set_alignment (0.0, 0.5);
+
+	new_button.set_size_request (-1, rintf (46 * scale));
+	existing_button.set_size_request (-1, rintf (46 * scale));
+
+	_recent_heading.set_markup (string_compose ("<span size=\"small\" weight=\"bold\" alpha=\"65%%\">%1</span>", _("RECENT")));
+	_recent_heading.set_alignment (0.0, 1.0);
+	_recent_heading.set_no_show_all (true);
+
+	_recent_list_box.set_spacing (4);
+	_recent_list_box.set_homogeneous (true);
+
+	_left_panel.set_spacing (8);
+	_left_panel.set_border_width (rintf (12 * scale));
+	_left_panel.set_size_request (rintf (400 * scale), -1);
+	_left_panel.pack_start (*brand, false, false, 6);
+	_left_panel.pack_start (new_button, false, false);
+	_left_panel.pack_start (existing_button, false, false);
+	_left_panel.pack_start (_recent_heading, false, false, 12);
+	_left_panel.pack_start (_recent_list_box, true, true);
+}
+
+void
+SessionDialog::fill_recent_list ()
+{
+	std::vector<Gtk::Widget*> old = _recent_list_box.get_children ();
+	for (Gtk::Widget* w : old) {
+		_recent_list_box.remove (*w);
+		delete w;
+	}
+
+	struct Entry {
+		int64_t     when;
+		std::string path;
+		std::string name;
+		std::string tip;
+	};
+	std::vector<Entry> entries;
+
+	for (Gtk::TreeModel::iterator i = recent_session_model->children ().begin (); i != recent_session_model->children ().end (); ++i) {
+		Entry e;
+		e.when = (*i)[recent_session_columns.time_modified];
+		e.path = (*i)[recent_session_columns.fullpath];
+		e.name = (*i)[recent_session_columns.visible_name];
+		e.tip  = (*i)[recent_session_columns.tip];
+		entries.push_back (e);
+	}
+
+	std::sort (entries.begin (), entries.end (), [] (Entry const& a, Entry const& b) { return a.when > b.when; });
+	if (entries.size () > 5) {
+		entries.resize (5);
+	}
+
+	size_t n = 0;
+	for (Entry const& e : entries) {
+		double seconds;
+		int    tracks;
+		read_session_summary (e.path, seconds, tracks);
+
+		std::string details = friendly_date (e.when);
+		if (seconds > 0) {
+			details += " · " + format_length (seconds);
+		}
+		if (tracks >= 0) {
+			details += " · " + string_compose (P_("%1 track", "%1 tracks", tracks), tracks);
+		}
+
+		/* tooltips arrive markup-escaped from the model; show them as plain text */
+		std::string tip = e.tip;
+		replace_all (tip, "&amp;", "&");
+		replace_all (tip, "&lt;", "<");
+		replace_all (tip, "&gt;", ">");
+
+		RecentSessionRow* row = new RecentSessionRow (e.name, details, tip, recent_palette[n++ % (sizeof (recent_palette) / sizeof (recent_palette[0]))]);
+		row->Activated.connect (sigc::bind<0> (sigc::mem_fun (*this, &SessionDialog::open_recent_path), e.path));
+		_recent_list_box.pack_start (*row, true, true);
+	}
+
+	if (entries.empty ()) {
+		_recent_heading.hide ();
+	} else {
+		_recent_heading.show ();
+	}
+}
+
+/** Open one of the recent sessions straight away */
+void
+SessionDialog::open_recent_path (std::string const& fullpath, bool safe_mode)
+{
+	for (Gtk::TreeModel::iterator i = recent_session_model->children ().begin (); i != recent_session_model->children ().end (); ++i) {
+		if (std::string ((*i)[recent_session_columns.fullpath]) == fullpath) {
+			recent_session_display.get_selection ()->select (i);
+			if (safe_mode) {
+				_disable_plugins.set_active (true);
+			}
+			_tabs.set_current_page (1);
+			response (RESPONSE_ACCEPT);
+			return;
+		}
+	}
+}
+
+bool
+SessionDialog::start_key_press (GdkEventKey* ev)
+{
+	if (!Gtkmm2ext::Keyboard::modifier_state_equals (ev->state, Gtkmm2ext::Keyboard::PrimaryModifier)) {
+		return false;
+	}
+	switch (ev->keyval) {
+		case GDK_n:
+		case GDK_N:
+			_tabs.set_current_page (0);
+			return true;
+		case GDK_o:
+		case GDK_O:
+			_tabs.set_current_page (2);
+			return true;
+	}
+	return false;
+}
+
+/* The file browser opens a session on a single click. Folder changes
+ * (and switching to the browser) can make GTK report a selection by
+ * itself, so selections within a moment of those are ignored. */
+void
+SessionDialog::browser_folder_changed ()
+{
+	_ignore_browser_selection_until = g_get_monotonic_time () + 400000;
 }

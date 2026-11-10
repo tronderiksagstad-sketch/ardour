@@ -127,7 +127,10 @@ ARDOUR_UI::build_session_from_dialog (SessionDialog& sd, const std::string& sess
 		bus_profile.master_out_channels = (uint32_t) sd.master_channel_count();
 	}
 
-	build_session (session_path, session_name, session_template, bus_profile, false, !sd.was_new_name_edited(), domain);
+	if (build_session (session_path, session_name, session_template, bus_profile, false, !sd.was_new_name_edited(), domain) == 0 && _session) {
+		/* bit depth chosen in the new-session form */
+		_session->config.set_native_file_data_format (sd.session_sample_format ());
+	}
 }
 
 /** This is only ever used once Ardour is already running with a session

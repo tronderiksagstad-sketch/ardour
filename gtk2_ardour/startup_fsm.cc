@@ -71,6 +71,7 @@ using std::vector;
 StartupFSM::StartupFSM (EngineControl& amd)
 	: session_domain (Config->get_preferred_time_domain())
 	, session_existing_sample_rate (0)
+	, session_sample_format (ARDOUR::FormatFloat)
 	, session_engine_hints ("EngineHints")
 	, session_is_new (false)
 	, session_name_edited (false)
@@ -529,7 +530,8 @@ StartupFSM::start_audio_midi_setup ()
 			}
 		}
 
-		if (!session_is_new && session_existing_sample_rate > 0) {
+		if (session_existing_sample_rate > 0) {
+			/* an existing session's rate, or the one chosen for a new session */
 			audiomidi_dialog.set_desired_sample_rate (session_existing_sample_rate);
 		}
 
@@ -907,6 +909,10 @@ StartupFSM::check_session_parameters (bool must_be_new)
 	} else {
 
 		bus_profile.master_out_channels = session_dialog->master_channel_count ();
+
+		/* rate and bit depth picked in the new-session form */
+		session_existing_sample_rate = session_dialog->session_sample_rate ();
+		session_sample_format        = session_dialog->session_sample_format ();
 	}
 
 	return 0;
