@@ -54,14 +54,16 @@ Checked against this source tree where unsure. Written 2026-11-10.
 ## Instruments, sounds, loops
 - 🟡 Few instruments: **ACE Reasonable Synth**, **ACE Fluid Synth** (SoundFonts), plus free LV2/VST3 plugins.
 - 🟡 **Library Downloader** and Freesound search; no large bundled library.
-- ❌ Instrument stacks, Drum Machine, Omnivocal.
+- 🟡 Instrument stacks: no stack feature, but routing does the same job (two instruments on one MIDI track via Pin Connections, or several tracks sharing one MIDI input). Not planned.
+- ❌ Drum Machine, Omnivocal.
 
 ## Effects
 - 🟡 About 10 ACE effects (EQ, compressor, expander, delay, reverb, filters…); free collections (x42, LSP, Calf) cover most of Cubase's list.
 - 🟡 MIDI effects: arpeggiators (simple, Barlow, Raptor) and a few scripts. No Beat Designer or Chorder.
 
 ## Other
-- ❌ AI stem separation. ❌ Score editor. ❌ Collaboration tools. ❌ Quick Help.
+- ❌ AI stem separation. ❌ Collaboration tools. ❌ Quick Help.
+- 🟡 Score editor *(this fork)*: **Open in MuseScore** on a MIDI region; saving in MuseScore brings the notes back. No score view inside Ardour.
 - ✅ Video timeline and video export. ✅ Lua scripting (Cubase has none).
 - 🟡 Tempo mapping tools; no automatic tempo detection from audio.
 
@@ -70,9 +72,9 @@ Free and open source · native Linux · clip launching (Cue page) · Lua scripti
 
 ## Gaps, by effort
 - **Fits Ardour's design (days to weeks each):** take-lane comping, chord track + chord pads,
-  pattern/step sequencer (could build on the Cue page), instrument stacks.
+  pattern/step sequencer (could build on the Cue page), score view inside Ardour (Verovio).
   (Multi-track audio warp quantize: done in this fork.)
-- **Very large / research-level:** VariAudio-style pitch editing, AI stem separation, score editor.
+- **Very large / research-level:** VariAudio-style pitch editing, AI stem separation, full score editor.
 
 ## Useful building blocks already in the source
 - `libs/vamp-pyin` — pYIN pitch tracker (note-by-note pitch detection, as used by pitch editors).

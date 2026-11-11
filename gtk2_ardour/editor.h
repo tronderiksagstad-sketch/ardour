@@ -1179,6 +1179,8 @@ private:
 	void normalize_region ();
 	void quantize_audio_to_grid ();
 	void audio_quantize_settings ();
+	void open_region_in_musescore ();
+	bool musescore_poll ();
 	void adjust_region_gain (bool up);
 	void reset_region_gain ();
 	void deinterlace_midi_regions (const RegionSelection& rs);

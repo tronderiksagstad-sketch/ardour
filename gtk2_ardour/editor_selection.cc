@@ -1548,6 +1548,11 @@ Editor::sensitize_the_right_region_actions (bool because_canvas_crossing)
 		_region_actions->get_action("split-multichannel-region")->set_sensitive (false);
 	}
 
+	/* only show what can be used on these regions */
+	_region_actions->get_action("open-in-musescore")->set_visible (have_midi);
+	_region_actions->get_action("quantize-audio-to-grid")->set_visible (have_audio);
+	_region_actions->get_action("audio-quantize-settings")->set_visible (have_audio);
+
 	if (!have_midi) {
 		editor_menu_actions->get_action("RegionMenuMIDI")->set_sensitive (false);
 		_region_actions->get_action("show-region-list-editor")->set_sensitive (false);

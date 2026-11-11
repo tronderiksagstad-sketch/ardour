@@ -420,6 +420,7 @@
         <menuitem action='legatize-region'/>
         <menuitem action='remove-overlap'/>
         <menuitem action='transform-region'/>
+        <menuitem action='open-in-musescore'/>
         <menuitem action='fork-region'/>
         <menuitem action='fork-regions-from-unselected'/>
         <menuitem action='deinterlace-midi'/>
@@ -936,6 +937,7 @@
     <menuitem action='loop-region'/>
     <menuitem action='quantize-audio-to-grid'/>
     <menuitem action='audio-quantize-settings'/>
+    <menuitem action='open-in-musescore'/>
     <menuitem action='rename-region'/>
     <menuitem action='edit-region-dedicated-window'/>
     <menu action='RegionMenuEdit'>
