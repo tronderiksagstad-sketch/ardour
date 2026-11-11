@@ -56,6 +56,8 @@
 #include "ardour/panner.h"
 #include "ardour/plugin_insert.h"
 #include "ardour/processor.h"
+#include "ardour/phase_control.h"
+#include "ardour/polarity_processor.h"
 #include "ardour/profile.h"
 #include "ardour/route_group.h"
 #include "ardour/session.h"
@@ -113,6 +115,7 @@ RouteTimeAxisView::RouteTimeAxisView (PublicEditor& ed, Session* sess, ArdourCan
 	, _view (0)
 	, button_table (3, 3)
 	, route_group_button (S_("RTAV|G"))
+	, phase_button ("\u00D8")
 	, playlist_button (S_("RTAV|P"))
 	, automation_button (S_("RTAV|A"))
 	, automation_action_menu (0)
@@ -349,6 +352,19 @@ RouteTimeAxisView::set_route (std::shared_ptr<Route> rt)
 		controls_table.attach (gm.get_gain_slider(), 0, 2, 2, 3, Gtk::FILL|Gtk::EXPAND, Gtk::FILL|Gtk::EXPAND, 1, 0);
 	}
 
+	/* phase (polarity) button: one click flips every channel of the track */
+	phase_button.set_name ("invert button");
+	phase_button.set_tweaks (ArdourButton::TrackHeader);
+	phase_button.set_corner_radius (5);
+	phase_button.signal_button_press_event().connect (sigc::mem_fun (*this, &RouteTimeAxisView::phase_click), false);
+	set_tooltip (phase_button, _("Invert phase (polarity)"));
+	if (!ARDOUR::Profile->get_mixbus() && !_route->is_master() && !_route->is_monitor()) {
+		controls_table.attach (phase_button, 5, 6, 0, 1, Gtk::SHRINK, Gtk::SHRINK, 0, 0);
+		_route->phase_control()->Changed.connect (*this, invalidator (*this), std::bind (&RouteTimeAxisView::update_phase_button, this), gui_context());
+		_route->polarity()->ConfigurationChanged.connect (*this, invalidator (*this), std::bind (&RouteTimeAxisView::update_phase_button, this), gui_context());
+		update_phase_button ();
+	}
+
 	set_tooltip(*solo_button,_("Solo"));
 	set_tooltip(*mute_button,_("Mute"));
 	set_tooltip(route_group_button, _("Group"));
@@ -483,6 +499,39 @@ RouteTimeAxisView::setup_processor_menu_and_curves ()
 			std::shared_ptr<PBD::Controllable> c = std::dynamic_pointer_cast <PBD::Controllable>((*i)->processor->control((*ii)->what));
 			ctrl_item_map[c] = (*ii)->menu_item;
 		}
+	}
+}
+
+bool
+RouteTimeAxisView::phase_click (GdkEventButton* ev)
+{
+	if (ev->button != 1 || !_route) {
+		return false;
+	}
+	std::shared_ptr<PhaseControl> pc = _route->phase_control ();
+	boost::dynamic_bitset<> b (pc->size ());
+	if (pc->count () != pc->size ()) {
+		b.set (); /* not all inverted yet: invert all */
+	}
+	pc->set_phase_invert (b);
+	return true;
+}
+
+void
+RouteTimeAxisView::update_phase_button ()
+{
+	std::shared_ptr<PhaseControl> pc = _route->phase_control ();
+	if (pc->size () == 0) {
+		phase_button.hide ();
+		return;
+	}
+	phase_button.show ();
+	if (pc->count () == pc->size ()) {
+		phase_button.set_active_state (Gtkmm2ext::ExplicitActive);
+	} else if (pc->any ()) {
+		phase_button.set_active_state (Gtkmm2ext::ImplicitActive);
+	} else {
+		phase_button.set_active_state (Gtkmm2ext::Off);
 	}
 }
 

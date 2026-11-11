@@ -176,6 +176,8 @@ protected:
 	void update_diskstream_display ();
 
 	bool route_group_click  (GdkEventButton *);
+	bool phase_click (GdkEventButton *);
+	void update_phase_button ();
 
 	virtual void processors_changed (ARDOUR::RouteProcessorChange);
 
@@ -249,6 +251,7 @@ protected:
 	Gtk::HBox   other_button_hbox;
 	Gtk::Table  button_table;
 	ArdourWidgets::ArdourButton route_group_button;
+	ArdourWidgets::ArdourButton phase_button;
 	ArdourWidgets::ArdourButton playlist_button;
 	ArdourWidgets::ArdourButton automation_button;
 	ArdourWidgets::ArdourButton number_label;
