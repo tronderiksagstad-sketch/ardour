@@ -42,6 +42,7 @@
 #include "actions.h"
 #include "ardour_message.h"
 #include "ardour_ui.h"
+#include "quick_help.h"
 #include "audio_clip_editor.h"
 #include "public_editor.h"
 #include "meterbridge.h"
@@ -311,6 +312,7 @@ ARDOUR_UI::setup_windows ()
 
 	main_vpacker.pack_start ( *spacer, false, false);
 	main_vpacker.pack_start (_tabs, true, true);
+	main_vpacker.pack_start (QuickHelp::instance (), false, false);
 
 	setup_transport();
 	build_menu_bar ();

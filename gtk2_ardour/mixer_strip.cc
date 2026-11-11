@@ -80,6 +80,7 @@
 #include "context_menu_helper.h"
 #include "enums_convert.h"
 #include "mixer_strip.h"
+#include "quick_help.h"
 #include "mixer_ui.h"
 #include "keyboard.h"
 #include "public_editor.h"
@@ -283,6 +284,8 @@ MixerStrip::init ()
 	bottom_button_table.attach (*rta_button,   1, 2, 1, 2);
 
 	name_button.set_name ("mixer strip button");
+	QuickHelp::set (name_button, N_("Track name"), N_("Click for track options: rename, colour, remove and more."));
+	QuickHelp::set (panners, N_("Pan"), N_("Where the track sits between the left and right speakers. Drag to move it; double-click to centre."));
 	name_button.set_text_ellipsize (Pango::ELLIPSIZE_END);
 	name_button.signal_size_allocate().connect (sigc::mem_fun (*this, &MixerStrip::name_button_resized));
 

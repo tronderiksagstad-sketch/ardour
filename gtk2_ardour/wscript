@@ -104,6 +104,8 @@ gtk2_ardour_sources = [
         'command_palette.cc',
         'audio_warp.cc',
         'editor_score.cc',
+        'quick_help.cc',
+        'quick_help_texts.cc',
         'editor_warp.cc',
         'editor_mouse.cc',
         'editor_ops.cc',

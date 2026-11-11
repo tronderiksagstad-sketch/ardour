@@ -669,6 +669,7 @@
 
       <menuitem action='ToggleTrackMeters'/>
       <menuitem action='ToggleTrackLevelBars'/>
+      <menuitem action='ToggleQuickHelp'/>
       <menuitem action='ToggleSummary'/>
       <menuitem action='ToggleVerticalSummary'/>
       <menuitem action='ToggleGroupTabs'/>

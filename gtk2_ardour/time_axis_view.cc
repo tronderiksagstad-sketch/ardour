@@ -55,6 +55,7 @@
 #include "gui_thread.h"
 #include "public_editor.h"
 #include "time_axis_view.h"
+#include "quick_help.h"
 #include "region_view.h"
 #include "ghostregion.h"
 #include "selection.h"
@@ -151,6 +152,7 @@ TimeAxisView::TimeAxisView (ARDOUR::Session* sess, PublicEditor& ed, TimeAxisVie
 	_ghost_group->show();
 
 	name_label.set_name (X_("TrackNameEditor"));
+	QuickHelp::set (name_label, N_("Track name"), N_("Double-click to rename the track."));
 	name_label.set_alignment (0.0, 0.5);
 	name_label.set_width_chars (12);
 	set_tooltip (name_label, _("Track/Bus name (double click to edit)"));
@@ -200,6 +202,7 @@ TimeAxisView::TimeAxisView (ARDOUR::Session* sess, PublicEditor& ed, TimeAxisVie
 	top_hbox.show ();
 
 	controls_ebox.add (time_axis_hbox);
+	QuickHelp::set (controls_ebox, N_("Track"), N_("Click to select the track. Drag up or down to reorder; drag the bottom edge to make it taller. Right-click for more."));
 	controls_ebox.add_events (Gdk::BUTTON_PRESS_MASK|
 				  Gdk::BUTTON_RELEASE_MASK|
 				  Gdk::POINTER_MOTION_MASK|

@@ -50,6 +50,7 @@
 #include "automation_time_axis.h"
 #include "control_point.h"
 #include "editor.h"
+#include "quick_help.h"
 #include "editing.h"
 #include "rgb_macros.h"
 #include "utils.h"
@@ -1515,6 +1516,7 @@ Editor::which_canvas_cursor(ItemType type) const
 bool
 Editor::enter_handler (ArdourCanvas::Item* item, GdkEvent* event, ItemType item_type)
 {
+	QuickHelp::set_canvas_item (item_type, true);
 	ControlPoint* cp;
 	ArdourMarker * marker;
 	MeterMarker* m_marker = 0;
@@ -1670,6 +1672,7 @@ Editor::enter_handler (ArdourCanvas::Item* item, GdkEvent* event, ItemType item_
 bool
 Editor::leave_handler (ArdourCanvas::Item* item, GdkEvent*, ItemType item_type)
 {
+	QuickHelp::set_canvas_item (item_type, false);
 	EditorAutomationLine* al;
 	ArdourMarker *marker;
 	TempoMarker *t_marker;

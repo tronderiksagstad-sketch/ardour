@@ -114,6 +114,7 @@
 #include "editing.h"
 #include "editing_convert.h"
 #include "editor.h"
+#include "quick_help.h"
 #include "editor_cursors.h"
 #include "editor_drag.h"
 #include "editor_group_tabs.h"
@@ -449,6 +450,8 @@ Editor::Editor ()
 	CairoWidget::set_focus_handler (sigc::mem_fun (*ARDOUR_UI::instance(), &ARDOUR_UI::reset_focus));
 
 	_summary = new EditorSummary (*this);
+	QuickHelp::set (*_summary, N_("Overview"), N_("The whole session in miniature. The box is what the window shows: drag it to move around, drag its edges to zoom."));
+	QuickHelp::set (controls_layout, N_("Empty area"), N_("Drag down here to add mono tracks, hold Shift for stereo. Double-click for all the options."));
 
 	_vsummary = new EditorVSummary (*this);
 

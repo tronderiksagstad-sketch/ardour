@@ -91,6 +91,7 @@ UI_CONFIG_VARIABLE (ARDOUR::ClockDeltaMode, secondary_clock_delta_mode, "seconda
 UI_CONFIG_VARIABLE (ARDOUR::samplecnt_t, clock_display_limit, "clock-display-limit", 359999) /* seconds; default 99h, 0 = unlimited */
 UI_CONFIG_VARIABLE (bool, show_track_meters, "show-track-meters", true)
 UI_CONFIG_VARIABLE (bool, show_track_level_bars, "show-track-level-bars", true)
+UI_CONFIG_VARIABLE (bool, show_quick_help, "show-quick-help", true)
 UI_CONFIG_VARIABLE (bool, hold_track_clip_lights, "hold-track-clip-lights", false)
 #ifdef __APPLE__
 UI_CONFIG_VARIABLE (bool, fastmeter_partial_exposure, "fastmeter-partial-exposure", false)

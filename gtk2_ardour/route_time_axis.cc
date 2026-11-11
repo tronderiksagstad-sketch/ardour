@@ -78,6 +78,7 @@
 #include "debug.h"
 #include "enums_convert.h"
 #include "route_time_axis.h"
+#include "quick_help.h"
 #include "automation_time_axis.h"
 #include "enums.h"
 #include "gui_thread.h"
@@ -266,6 +267,7 @@ RouteTimeAxisView::set_route (std::shared_ptr<Route> rt)
 		}
 		controls_table.remove (name_label);
 		header_meter = new LevelMeterVBox (_session);
+		QuickHelp::set (*header_meter, N_("Level"), N_("How loud the track is right now. The square at the end turns red if it clips."));
 		header_meter->set_meter (_route->shared_peak_meter ().get ());
 		header_meter->setup_meters (60, 3, 2);
 		header_meter->set_max_audio_meter_count (2);

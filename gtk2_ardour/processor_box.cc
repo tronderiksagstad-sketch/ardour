@@ -95,6 +95,7 @@
 #include "plugin_ui.h"
 #include "port_insert_ui.h"
 #include "processor_box.h"
+#include "quick_help.h"
 #include "processor_selection.h"
 #include "public_editor.h"
 #include "return_ui.h"
@@ -1989,6 +1990,7 @@ ProcessorBox::ProcessorBox (ARDOUR::Session* sess, std::function<PluginSelector*
 
 	processor_display.set_can_focus ();
 	processor_display.set_name ("ProcessorList");
+	QuickHelp::set (processor_display, N_("Plugins"), N_("The effects on this track, top to bottom. Double-click the empty space to add one, double-click a plugin to open it, drag to reorder."));
 	processor_display.set_data ("processorbox", this);
 	processor_display.set_size_request (48, -1);
 	processor_display.set_spacing (0);

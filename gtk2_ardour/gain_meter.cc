@@ -53,6 +53,7 @@
 
 #include "ardour_ui.h"
 #include "gain_meter.h"
+#include "quick_help.h"
 #include "gui_thread.h"
 #include "keyboard.h"
 #include "public_editor.h"
@@ -136,6 +137,8 @@ GainMeterBase::GainMeterBase (Session* s, bool horizontal, int fader_length, int
 	}
 
 	level_meter = new LevelMeterHBox(_session);
+	QuickHelp::set (*gain_slider, N_("Fader"), N_("The track's volume. Drag to change it; double-click the number below to type a value. Hold Ctrl while dragging for fine steps."));
+	QuickHelp::set (*level_meter, N_("Level meter"), N_("How loud the track is right now. Green is fine, yellow is loud, red at the top means it is clipping."));
 
 	level_meter->ButtonPress.connect_same_thread (_level_meter_connection, std::bind (&GainMeterBase::level_meter_button_press, this, _1));
 	meter_metric_area.signal_button_press_event().connect (sigc::mem_fun (*this, &GainMeterBase::level_meter_button_press));
