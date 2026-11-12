@@ -41,8 +41,11 @@
 
 #include "widgets/ardour_button.h"
 
+class XMLNode;
+
 namespace ARDOUR {
 	class Route;
+	class Processor;
 }
 
 class PluginList;
@@ -217,6 +220,49 @@ private:
 	void set_foot (std::string const&);
 	void rack_changed ();
 	bool rack_expose (GdkEventExpose*);
+
+	/* The rack is the track's plugin list, and can be worked on right here:
+	 * click a unit to select it (Delete takes it off), double-click to open
+	 * its window, drag it sideways to change the order. Ctrl+Z takes back
+	 * what was done here, last thing first. */
+	struct RackUnit {
+		std::weak_ptr<ARDOUR::Processor> proc;
+		std::string name;
+		uint32_t    light, dark, ink, glow;
+		double      x, w;
+	};
+	struct Undo {
+		enum What { Added, Removed, Moved } what;
+		std::weak_ptr<ARDOUR::Route>     route;
+		std::weak_ptr<ARDOUR::Processor> proc;  ///< Added
+		std::string                      name;
+		std::shared_ptr<XMLNode>         state; ///< Removed: what it was
+		int                              index; ///< Removed: where it was
+		bool                             active;
+		std::vector<std::weak_ptr<ARDOUR::Processor> > order; ///< Moved: the order before
+	};
+	std::vector<RackUnit>            _rack_units;
+	std::weak_ptr<ARDOUR::Processor> _rack_sel;
+	int                              _rack_press;   ///< unit under the pressed button, or -1
+	double                           _rack_press_x;
+	double                           _rack_grab_dx;
+	bool                             _rack_dragging;
+	double                           _rack_drag_x;
+	std::string                      _rack_note;
+	std::vector<Undo>                _undo;
+
+	void rack_layout (double width);
+	int  rack_unit_at (double x) const;
+	int  rack_drop_slot () const;
+	bool rack_press (GdkEventButton*);
+	bool rack_release (GdkEventButton*);
+	bool rack_motion (GdkEventMotion*);
+	void rack_select (std::shared_ptr<ARDOUR::Processor>);
+	void rack_remove_selected ();
+	void rack_open (std::shared_ptr<ARDOUR::Processor>);
+	void rack_move (int from, int slot);
+	void rack_say (std::string const&);
+	void undo ();
 	void open_manager ();
 	void list_scrolled ();
 	std::string tile_tip (int filter) const;

@@ -33,6 +33,7 @@
 
 #include "pbd/xml++.h"
 
+#include "ardour/audioengine.h"
 #include "ardour/filesystem_paths.h"
 #include "ardour/midi_track.h"
 #include "ardour/plugin_insert.h"
@@ -44,11 +45,14 @@
 
 #include "gtkmm2ext/actions.h"
 #include "gtkmm2ext/colors.h"
+#include "gtkmm2ext/keyboard.h"
 #include "gtkmm2ext/utils.h"
 
 #include "ardour_message.h"
 #include "ardour_ui.h"
 #include "gui_thread.h"
+#include "mixer_strip.h"
+#include "mixer_ui.h"
 #include "plugin_browser.h"
 #include "public_editor.h"
 #include "route_time_axis.h"
@@ -1203,6 +1207,11 @@ PluginBrowser::PluginBrowser ()
 	, _filter (-1)
 	, _sel (-1)
 	, _editing (false)
+	, _rack_press (-1)
+	, _rack_press_x (0)
+	, _rack_grab_dx (0)
+	, _rack_dragging (false)
+	, _rack_drag_x (0)
 {
 	set_title (_("Add plugin"));
 	set_decorated (false);
@@ -1441,6 +1450,11 @@ PluginBrowser::PluginBrowser ()
 	_rack = manage (new Gtk::DrawingArea);
 	_rack->set_size_request (-1, px (52));
 	_rack->signal_expose_event ().connect (sigc::mem_fun (*this, &PluginBrowser::rack_expose));
+	_rack->set_can_focus (true);
+	_rack->add_events (Gdk::BUTTON_PRESS_MASK | Gdk::BUTTON_RELEASE_MASK | Gdk::BUTTON1_MOTION_MASK);
+	_rack->signal_button_press_event ().connect (sigc::mem_fun (*this, &PluginBrowser::rack_press));
+	_rack->signal_button_release_event ().connect (sigc::mem_fun (*this, &PluginBrowser::rack_release));
+	_rack->signal_motion_notify_event ().connect (sigc::mem_fun (*this, &PluginBrowser::rack_motion));
 	Gtk::VBox* rack_box = manage (new Gtk::VBox (false, px (6)));
 	rack_box->set_border_width (px (12));
 	rack_box->pack_start (_rack_title, false, false);
@@ -2021,6 +2035,24 @@ PluginBrowser::update_chip ()
 }
 
 void
+PluginBrowser::rack_say (string const& text)
+{
+	_rack_note = text;
+	if (!text.empty ()) {
+		_rack_msg.set_text (text);
+		return;
+	}
+	/* nothing to report: say what can be done here */
+	std::shared_ptr<Route> r = _target.lock ();
+	if (r && r->nth_plugin (0)) {
+		_rack_msg.set_markup (string_compose ("<span foreground=\"#7d8590\">%1</span>",
+		                                      Glib::Markup::escape_text (_("Double-click a unit to open it. Click to select it, Delete takes it off. Drag to change the order. Ctrl+Z undoes."))));
+	} else {
+		_rack_msg.set_text ("");
+	}
+}
+
+void
 PluginBrowser::rack_changed ()
 {
 	std::shared_ptr<Route> r = _target.lock ();
@@ -2032,9 +2064,91 @@ PluginBrowser::rack_changed ()
 	} else {
 		_rack_title.set_text ("");
 	}
+	if (_rack_note.empty ()) {
+		rack_say ("");
+	}
 	if (_rack) {
 		_rack->queue_draw ();
 	}
+}
+
+/** the track's plugins as units, laid out centred in `W` (unscaled pixels) */
+void
+PluginBrowser::rack_layout (double W)
+{
+	vector<RackUnit> units;
+	std::shared_ptr<Route> r = _target.lock ();
+	if (r) {
+		r->foreach_processor ([&units] (std::weak_ptr<Processor> wp) {
+			std::shared_ptr<PluginInsert> pi = std::dynamic_pointer_cast<PluginInsert> (wp.lock ());
+			if (!pi || !pi->display_to_user ()) {
+				return;
+			}
+			RackUnit u;
+			u.proc = pi;
+			u.name = pi->name ();
+			u.glow = kind_table[OtherEffect].glow;
+			string maker;
+			if (pi->plugin () && pi->plugin ()->get_info ()) {
+				PluginInfoPtr info = pi->plugin ()->get_info ();
+				maker  = lower (info->creator);
+				u.glow = kind_table[guess_kind (info->category + " " + info->name, info->is_instrument (), info->is_analyzer ())].glow;
+			}
+			skin_for (maker, u.light, u.dark, u.ink);
+			u.x = u.w = 0;
+			units.push_back (u);
+		});
+	}
+	const double gap = 8;
+	double pw = 184;
+	if (!units.empty () && units.size () * (pw + gap) - gap > W) {
+		pw = std::max (70.0, (W - (units.size () - 1) * gap) / units.size ());
+	}
+	double x = (W - (units.size () * (pw + gap) - gap)) / 2;
+	for (RackUnit& u : units) {
+		u.x = x;
+		u.w = pw;
+		x += pw + gap;
+	}
+	_rack_units.swap (units);
+
+	/* a selection that is no longer on this track is no selection */
+	std::shared_ptr<Processor> sel = _rack_sel.lock ();
+	bool found = false;
+	for (RackUnit const& u : _rack_units) {
+		found = found || (sel && u.proc.lock () == sel);
+	}
+	if (!found) {
+		_rack_sel.reset ();
+	}
+}
+
+int
+PluginBrowser::rack_unit_at (double x) const
+{
+	for (size_t i = 0; i < _rack_units.size (); ++i) {
+		if (x >= _rack_units[i].x && x < _rack_units[i].x + _rack_units[i].w) {
+			return (int) i;
+		}
+	}
+	return -1;
+}
+
+/** while dragging: where the unit would land, counted among the other units */
+int
+PluginBrowser::rack_drop_slot () const
+{
+	if (_rack_press < 0 || _rack_press >= (int) _rack_units.size ()) {
+		return -1;
+	}
+	const double centre = _rack_drag_x - _rack_grab_dx + _rack_units[_rack_press].w / 2;
+	int slot = 0;
+	for (size_t i = 0; i < _rack_units.size (); ++i) {
+		if ((int) i != _rack_press && _rack_units[i].x + _rack_units[i].w / 2 < centre) {
+			++slot;
+		}
+	}
+	return slot;
 }
 
 bool
@@ -2044,30 +2158,14 @@ PluginBrowser::rack_expose (GdkEventExpose*)
 	const float  s = UIConfiguration::instance ().get_ui_scale ();
 	const double W = _rack->get_allocation ().get_width () / s, H = _rack->get_allocation ().get_height () / s;
 	cr->scale (s, s);
+	rgb (cr, col_bg);
+	cr->paint ();
 
-	vector<std::pair<string, PluginBrowser::Entry> > plates;
-	std::shared_ptr<Route> r = _target.lock ();
-	if (r) {
-		for (uint32_t n = 0; ; ++n) {
-			std::shared_ptr<Processor> p = r->nth_plugin (n);
-			if (!p) { break; }
-			PluginBrowser::Entry e;
-			e.name = p->name ();
-			e.uses = 1;
-			e.seed = hash_of (e.name);
-			e.kind = OtherEffect;
-			string maker;
-			if (std::shared_ptr<PluginInsert> pi = std::dynamic_pointer_cast<PluginInsert> (p)) {
-				if (pi->plugin () && pi->plugin ()->get_info ()) {
-					maker = lower (pi->plugin ()->get_info ()->creator);
-					if (pi->plugin ()->get_info ()->is_instrument ()) { e.kind = FirstInstrument; }
-				}
-			}
-			skin_for (maker, e.light, e.dark, e.ink);
-			plates.push_back (std::make_pair (e.name, e));
-		}
+	if (!_rack_dragging) {
+		rack_layout (W);
 	}
-	if (plates.empty ()) {
+	std::shared_ptr<Route> r = _target.lock ();
+	if (_rack_units.empty ()) {
 		Glib::RefPtr<Pango::Layout> l = make_layout (cr, *_rack, 13, false);
 		l->set_text (r && std::dynamic_pointer_cast<MidiTrack> (r) ? _("No instrument yet.") : _("No plugins yet."));
 		int tw, th;
@@ -2076,26 +2174,330 @@ PluginBrowser::rack_expose (GdkEventExpose*)
 		show_text (cr, l, (W - tw) / 2, (H - th) / 2);
 		return true;
 	}
-	const double gap = 8;
-	double pw = 184;
-	if (plates.size () * (pw + gap) - gap > W) {
-		pw = std::max (70.0, (W - (plates.size () - 1) * gap) / plates.size ());
-	}
-	double x = (W - (plates.size () * (pw + gap) - gap)) / 2;
-	for (auto const& p : plates) {
-		const double y = (H - 44) / 2;
-		panel (cr, x, y, pw, 44, 5, p.second, true);
+
+	const double y = (H - 44) / 2;
+	std::shared_ptr<Processor> sel = _rack_sel.lock ();
+
+	auto draw_unit = [&] (RackUnit const& u, double x, bool selected) {
+		PluginBrowser::Entry e;
+		e.light = u.light;
+		e.dark  = u.dark;
+		e.ink   = u.ink;
+		panel (cr, x, y, u.w, 44, 5, e, true);
 		rgb (cr, 0x0a0c0e);
 		rounded (cr, x + 9, y + 14, 20, 16, 2);
 		cr->fill ();
-		rgb (cr, kind_table[p.second.kind].glow);
+		rgb (cr, u.glow);
 		cr->rectangle (x + 12, y + 21, 14, 2);
 		cr->fill ();
-		text_at (cr, *_rack, Glib::Markup::escape_text (p.first), 11, true, p.second.ink, 1.0, x + 38, y + 14, pw - 56, false);
-		led (cr, x + pw - 10, y + 22, 2.5, true);
-		x += pw + gap;
+		text_at (cr, *_rack, Glib::Markup::escape_text (u.name), 11, true, u.ink, 1.0, x + 38, y + 14, u.w - 56, false);
+		led (cr, x + u.w - 10, y + 22, 2.5, true);
+		if (selected) {
+			rgb (cr, col_accent);
+			cr->set_line_width (2);
+			rounded (cr, x - 2, y - 2, u.w + 4, 48, 7);
+			cr->stroke ();
+		}
+	};
+
+	for (size_t i = 0; i < _rack_units.size (); ++i) {
+		RackUnit const& u = _rack_units[i];
+		if (_rack_dragging && (int) i == _rack_press) {
+			/* where it came from */
+			rgb (cr, 0xffffff, 0.12);
+			cr->set_line_width (1);
+			rounded (cr, u.x + 0.5, y + 0.5, u.w - 1, 43, 5);
+			cr->stroke ();
+			continue;
+		}
+		draw_unit (u, u.x, sel && u.proc.lock () == sel);
+	}
+
+	if (_rack_dragging && _rack_press >= 0 && _rack_press < (int) _rack_units.size ()) {
+		/* where it would go, then the unit itself under the pointer */
+		const int slot = rack_drop_slot ();
+		vector<const RackUnit*> others;
+		for (size_t i = 0; i < _rack_units.size (); ++i) {
+			if ((int) i != _rack_press) {
+				others.push_back (&_rack_units[i]);
+			}
+		}
+		double mx = _rack_units[_rack_press].x + _rack_units[_rack_press].w / 2;
+		if (!others.empty ()) {
+			mx = slot < (int) others.size () ? others[slot]->x - 4 : others.back ()->x + others.back ()->w + 4;
+		}
+		rgb (cr, col_accent);
+		rounded (cr, mx - 1.5, y - 3, 3, 50, 1.5);
+		cr->fill ();
+		draw_unit (_rack_units[_rack_press], _rack_drag_x - _rack_grab_dx, true);
 	}
 	return true;
+}
+
+bool
+PluginBrowser::rack_press (GdkEventButton* ev)
+{
+	if (ev->button != 1) {
+		return false;
+	}
+	const double x = ev->x / UIConfiguration::instance ().get_ui_scale ();
+	const int    u = rack_unit_at (x);
+	_rack->grab_focus ();
+
+	if (ev->type == GDK_2BUTTON_PRESS) {
+		_rack_press = -1;
+		if (u >= 0) {
+			rack_open (_rack_units[u].proc.lock ());
+		}
+		return true;
+	}
+	if (ev->type != GDK_BUTTON_PRESS) {
+		return true;
+	}
+	_rack_dragging = false;
+	_rack_press    = u;
+	_rack_press_x  = x;
+	_rack_grab_dx  = u >= 0 ? x - _rack_units[u].x : 0;
+	rack_select (u >= 0 ? _rack_units[u].proc.lock () : std::shared_ptr<Processor> ());
+	return true;
+}
+
+bool
+PluginBrowser::rack_motion (GdkEventMotion* ev)
+{
+	if (_rack_press < 0 || !(ev->state & GDK_BUTTON1_MASK)) {
+		return false;
+	}
+	const double x = ev->x / UIConfiguration::instance ().get_ui_scale ();
+	if (!_rack_dragging && fabs (x - _rack_press_x) > 6) {
+		_rack_dragging = true;
+	}
+	if (_rack_dragging) {
+		_rack_drag_x = x;
+		_rack->queue_draw ();
+	}
+	return true;
+}
+
+bool
+PluginBrowser::rack_release (GdkEventButton* ev)
+{
+	if (ev->button != 1) {
+		return false;
+	}
+	if (_rack_dragging) {
+		const int from = _rack_press;
+		const int slot = rack_drop_slot ();
+		_rack_dragging = false;
+		_rack_press    = -1;
+		rack_move (from, slot);
+		_rack->queue_draw ();
+	}
+	_rack_press = -1;
+	return true;
+}
+
+void
+PluginBrowser::rack_select (std::shared_ptr<Processor> p)
+{
+	_rack_sel = p;
+	rack_say (p ? string_compose (_("%1 is selected. Delete takes it off, double-click opens it, drag moves it."), p->name ()) : string ());
+	_rack->queue_draw ();
+}
+
+static Route::ProcessorList
+visible_processors (std::shared_ptr<Route> r)
+{
+	Route::ProcessorList l;
+	r->foreach_processor ([&l] (std::weak_ptr<Processor> wp) {
+		std::shared_ptr<Processor> p = wp.lock ();
+		if (p && p->display_to_user ()) {
+			l.push_back (p);
+		}
+	});
+	return l;
+}
+
+void
+PluginBrowser::rack_remove_selected ()
+{
+	std::shared_ptr<Route>     r = _target.lock ();
+	std::shared_ptr<Processor> p = _rack_sel.lock ();
+	if (!r || !p) {
+		return;
+	}
+	/* remember what it was and where, so that Ctrl+Z can put it back */
+	Undo u;
+	u.what   = Undo::Removed;
+	u.route  = r;
+	u.name   = p->name ();
+	u.active = p->enabled ();
+	u.state.reset (&p->get_state ());
+	u.index = 0;
+	for (std::shared_ptr<Processor> const& q : visible_processors (r)) {
+		if (q == p) {
+			break;
+		}
+		++u.index;
+	}
+
+	Route::ProcessorStreams err;
+	if (r->remove_processor (p, &err) != 0) {
+		rack_say (string_compose (_("%1 could not be taken off %2."), u.name, r->name ()));
+		return;
+	}
+	_undo.push_back (u);
+	_rack_sel.reset ();
+	rack_say (string_compose (_("%1 is off %2. Ctrl+Z puts it back."), u.name, r->name ()));
+	rack_changed ();
+}
+
+void
+PluginBrowser::rack_open (std::shared_ptr<Processor> p)
+{
+	std::shared_ptr<Route> r = _target.lock ();
+	if (!r || !p) {
+		return;
+	}
+	if (!AudioEngine::instance ()->running ()) {
+		rack_say (_("The audio engine is not running, so the plugin's window cannot open."));
+		return;
+	}
+	MixerStrip* strip = Mixer_UI::instance ()->strip_for_route (r);
+	if (!strip) {
+		return;
+	}
+	strip->edit_processor (p);
+}
+
+/** move unit `from` so that it sits at `slot`, counted among the other units */
+void
+PluginBrowser::rack_move (int from, int slot)
+{
+	std::shared_ptr<Route> r = _target.lock ();
+	if (!r || from < 0 || from >= (int) _rack_units.size () || slot < 0 || slot == from) {
+		return;
+	}
+	std::shared_ptr<Processor> moving = _rack_units[from].proc.lock ();
+	vector<std::shared_ptr<Processor> > others;
+	for (size_t i = 0; i < _rack_units.size (); ++i) {
+		if ((int) i != from) {
+			if (std::shared_ptr<Processor> q = _rack_units[i].proc.lock ()) {
+				others.push_back (q);
+			}
+		}
+	}
+	if (!moving || others.empty ()) {
+		return;
+	}
+
+	const Route::ProcessorList before = visible_processors (r);
+	Route::ProcessorList       order  = before;
+	order.remove (moving);
+	if (slot < (int) others.size ()) {
+		order.insert (std::find (order.begin (), order.end (), others[slot]), moving);
+	} else {
+		Route::ProcessorList::iterator i = std::find (order.begin (), order.end (), others.back ());
+		if (i != order.end ()) {
+			++i;
+		}
+		order.insert (i, moving);
+	}
+
+	Route::ProcessorStreams err;
+	if (r->reorder_processors (order, &err) != 0) {
+		rack_say (string_compose (_("%1 cannot go there: the plugins around it would not fit together."), moving->name ()));
+		return;
+	}
+	Undo u;
+	u.what  = Undo::Moved;
+	u.route = r;
+	u.name  = moving->name ();
+	u.index = 0;
+	u.active = true;
+	for (std::shared_ptr<Processor> const& q : before) {
+		u.order.push_back (q);
+	}
+	_undo.push_back (u);
+	_rack_sel = moving;
+	rack_say (string_compose (_("Moved %1. Ctrl+Z moves it back."), moving->name ()));
+	rack_changed ();
+}
+
+/** Ctrl+Z: take back the last thing done to a track from this window */
+void
+PluginBrowser::undo ()
+{
+	Session* s = ARDOUR_UI::instance ()->the_session ();
+	while (!_undo.empty ()) {
+		Undo u = _undo.back ();
+		_undo.pop_back ();
+		std::shared_ptr<Route> r = u.route.lock ();
+		if (!r || !s) {
+			continue; /* the track is gone: try the thing before */
+		}
+		Route::ProcessorStreams err;
+
+		if (u.what == Undo::Added) {
+			std::shared_ptr<Processor> p = u.proc.lock ();
+			if (!p) {
+				continue;
+			}
+			if (r->remove_processor (p, &err) == 0) {
+				rack_say (string_compose (_("%1 is off %2 again."), u.name, r->name ()));
+			}
+		} else if (u.what == Undo::Moved) {
+			Route::ProcessorList order;
+			for (std::weak_ptr<Processor> const& w : u.order) {
+				if (std::shared_ptr<Processor> p = w.lock ()) {
+					order.push_back (p);
+				}
+			}
+			if (r->reorder_processors (order, &err) == 0) {
+				rack_say (string_compose (_("%1 is back where it was."), u.name));
+			}
+		} else if (u.state) {
+			/* build it again from what it was, the way pasting a plugin does */
+			try {
+				std::shared_ptr<PluginInsert> p (new PluginInsert (*s, *r));
+				const PBD::ID id = p->id ();
+				XMLNode       state (*u.state);
+				state.remove_nodes_and_delete ("Processor");
+				uint32_t count = 0;
+				state.get_property ("count", count);
+				state.remove_property ("count");
+				state.remove_property ("custom");
+				state.remove_nodes_and_delete ("ConfiguredInput");
+				state.remove_nodes_and_delete ("CustomSinks");
+				state.remove_nodes_and_delete ("ConfiguredOutput");
+				state.remove_nodes_and_delete ("PresetOutput");
+				state.remove_nodes_and_delete ("ThruMap");
+				for (uint32_t i = 0; i < count; ++i) {
+					state.remove_nodes_and_delete (string_compose ("InputMap-%1", i));
+					state.remove_nodes_and_delete (string_compose ("OutputMap-%1", i));
+				}
+				{
+					PBD::Stateful::ForceIDRegeneration force_ids;
+					p->set_state (state, PBD::Stateful::current_state_version);
+				}
+				p->update_id (id);
+				if (r->add_processor_by_index (p, u.index, &err, u.active) == 0) {
+					_rack_sel = p;
+					rack_say (string_compose (_("%1 is back on %2, with its settings."), u.name, r->name ()));
+				} else {
+					rack_say (string_compose (_("%1 could not be put back on %2."), u.name, r->name ()));
+				}
+			} catch (...) {
+				rack_say (string_compose (_("%1 could not be put back on %2."), u.name, r->name ()));
+			}
+		}
+		if (r != _target.lock ()) {
+			set_target (r); /* show the track it happened on */
+		}
+		rack_changed ();
+		return;
+	}
+	rack_say (_("Nothing to undo here."));
 }
 
 void
@@ -2113,7 +2515,7 @@ PluginBrowser::set_target (std::shared_ptr<Route> r)
 	update_tiles ();
 	update_chip ();
 	rack_changed ();
-	_rack_msg.set_text ("");
+	rack_say ("");
 	rebuild ();
 	set_foot ("");
 }
@@ -2138,7 +2540,7 @@ PluginBrowser::choose_target ()
 	});
 
 	if (routes.empty ()) {
-		_rack_msg.set_text (_("This session has no tracks yet."));
+		rack_say (_("This session has no tracks yet."));
 		return;
 	}
 
@@ -2405,7 +2807,7 @@ PluginBrowser::add_entry (int entry)
 	}
 	std::shared_ptr<Route> route = _target.lock ();
 	if (!route) {
-		_rack_msg.set_text (_("Choose a track first: click “Add to” at the top right."));
+		rack_say (_("Choose a track first: click “Add to” at the top right."));
 		choose_target ();
 		return;
 	}
@@ -2414,7 +2816,7 @@ PluginBrowser::add_entry (int entry)
 
 	PluginPtr p = info->load (*s);
 	if (!p) {
-		_rack_msg.set_text (string_compose (_("%1 could not be loaded."), e.name));
+		rack_say (string_compose (_("%1 could not be loaded."), e.name));
 		return;
 	}
 	std::shared_ptr<Processor> processor (new PluginInsert (*s, *route, p));
@@ -2432,7 +2834,7 @@ PluginBrowser::add_entry (int entry)
 		rv = route->add_processor (processor, PreFader, &err, active);
 	}
 	if (rv != 0) {
-		_rack_msg.set_text (string_compose (_("%1 could not be added: its inputs and outputs do not fit %2."), e.name, route->name ()));
+		rack_say (string_compose (_("%1 could not be added: its inputs and outputs do not fit %2."), e.name, route->name ()));
 		return;
 	}
 
@@ -2441,7 +2843,18 @@ PluginBrowser::add_entry (int entry)
 	e.last_used = time (0);
 	refresh_stats ();
 	show_selected ();
-	_rack_msg.set_text (string_compose (_("%1 is on %2. Click another to add more, or press Esc when you are done."), e.name, route->name ()));
+	{
+		Undo u;
+		u.what   = Undo::Added;
+		u.route  = route;
+		u.proc   = processor;
+		u.name   = e.name;
+		u.index  = 0;
+		u.active = true;
+		_undo.push_back (u);
+	}
+	_rack_sel.reset ();
+	rack_say (string_compose (_("%1 is on %2. Click another to add more. Ctrl+Z takes it off again."), e.name, route->name ()));
 	rack_changed ();
 	_list->queue_draw ();
 }
@@ -2454,6 +2867,9 @@ PluginBrowser::on_show ()
 	load_entries ();
 	_search.set_text ("");
 	_editing = false;
+	_undo.clear ();
+	_rack_sel.reset ();
+	_rack_note.clear ();
 	_note_edit.hide ();
 
 	std::shared_ptr<Route> r = _target.lock ();
@@ -2462,7 +2878,7 @@ PluginBrowser::on_show ()
 	set_target (r);
 	update_tiles ();
 	rebuild ();
-	_rack_msg.set_text ("");
+	rack_say ("");
 
 	Gtk::Window& mw = ARDOUR_UI::instance ()->main_window ();
 	int mx, my, mww, mwh, w, h;
@@ -2523,6 +2939,33 @@ PluginBrowser::on_key_press_event (GdkEventKey* ev)
 			hide ();
 		}
 		return true;
+	}
+	const bool primary = Gtkmm2ext::Keyboard::modifier_state_equals (ev->state, Gtkmm2ext::Keyboard::PrimaryModifier);
+	if (primary && !_editing && (ev->keyval == GDK_z || ev->keyval == GDK_Z)) {
+		undo ();
+		return true;
+	}
+	if (_rack && _rack->has_focus ()) {
+		switch (ev->keyval) {
+		case GDK_Delete:
+		case GDK_KP_Delete:
+		case GDK_BackSpace:
+			rack_remove_selected ();
+			return true;
+		case GDK_Return:
+		case GDK_KP_Enter:
+			rack_open (_rack_sel.lock ());
+			return true;
+		default:
+			if (!primary && !ev->is_modifier) {
+				/* anything else is for the search */
+				_rack_sel.reset ();
+				_rack->queue_draw ();
+				_search.grab_focus ();
+				_search.set_position (-1);
+			}
+			break;
+		}
 	}
 	return Gtk::Window::on_key_press_event (ev);
 }
