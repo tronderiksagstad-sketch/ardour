@@ -13,6 +13,14 @@ Working branch: `memlock-fix-and-theme`.
 - The most likely action should already be selected or shown (e.g. the start window opens straight on the New session form).
 - Lists of things the user picks from (recent sessions, files) open on a single click.
 
+**Centre the main elements.**
+
+- Lay windows and dialogs out symmetrically around the middle, like centred text in an editor.
+- The main thing sits in the middle and is the largest; side sections are of equal width.
+- A search bar is narrow and centred over the middle section, not stretched across the window.
+- Within a section, stack things on top of each other and centre them (a title above its content, not beside it).
+- Rows in a list the user scans stay left-aligned inside the row; the list itself is centred.
+
 ## Workflow
 
 - Mockups live on the "Ardour Redesign" design canvas (claude.ai artifact P4iXDk1Sf91eiqX8BgmCu7); agree the design there before changing code.
