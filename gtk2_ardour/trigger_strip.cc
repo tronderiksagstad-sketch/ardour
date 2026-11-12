@@ -41,6 +41,7 @@
 #include "plugin_ui.h"
 #include "public_editor.h"
 #include "trigger_master.h"
+#include "quick_help.h"
 #include "trigger_strip.h"
 #include "ui_config.h"
 
@@ -182,6 +183,8 @@ TriggerStrip::init ()
 	_tmaster_widget.show ();
 	_name_button.show ();
 	_trigger_display.show ();
+	QuickHelp::set (_trigger_display, N_("Clip slots"), N_("Each box holds a clip or loop. Click its button to start it; drag a file or a region in to fill an empty one. Click its name to see its settings."));
+	QuickHelp::set (_tmaster_widget, N_("Track stop"), N_("Stops the clip that is playing on this track."));
 	_processor_box.show ();
 	_level_meter.show ();
 

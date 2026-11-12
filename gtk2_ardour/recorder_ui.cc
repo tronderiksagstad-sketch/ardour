@@ -59,6 +59,7 @@
 #include "public_editor.h"
 #include "recorder_group_tabs.h"
 #include "recorder_ui.h"
+#include "quick_help.h"
 #include "timers.h"
 #include "timers.h"
 #include "track_record_axis.h"
@@ -151,6 +152,7 @@ RecorderUI::RecorderUI ()
 	_toolbar_button_height->add_widget (_btn_new_plist_rec);
 
 	_meter_area.set_spacing (0);
+	QuickHelp::set (_meter_area, N_("Inputs"), N_("One meter for each input of your sound card. Check here that a microphone is arriving, and is not too loud, before you record."));
 	_meter_area.pack_start (_meter_table, true, true);
 	_meter_area.signal_size_request().connect (sigc::mem_fun (*this, &RecorderUI::meter_area_size_request));
 	_meter_area.signal_size_allocate ().connect (mem_fun (*this, &RecorderUI::meter_area_size_allocate));

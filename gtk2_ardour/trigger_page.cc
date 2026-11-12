@@ -50,6 +50,7 @@
 #include "pianoroll.h"
 #include "timers.h"
 #include "trigger_page.h"
+#include "quick_help.h"
 #include "trigger_strip.h"
 #include "triggerbox_ui.h"
 #include "ui_config.h"
@@ -105,6 +106,9 @@ TriggerPage::TriggerPage ()
 	 */
 	_cue_area_frame.set_padding (4, 1, 1, 1);
 	_cue_area_frame.add (_cue_area_box);
+	QuickHelp::set (_cue_box, N_("Row buttons"), N_("Starts every clip in that row at once, like a scene of a song."));
+	QuickHelp::set (_master_widget, N_("Stop all"), N_("Stops all clips."));
+	QuickHelp::set (_trigger_clip_picker, N_("Clip library"), N_("Loops and clips on your disk. Click one to hear it, drag it into a slot to use it."));
 
 	_strip_scroller.add (_strip_packer);
 	_strip_scroller.set_policy (Gtk::POLICY_ALWAYS, Gtk::POLICY_AUTOMATIC);
@@ -112,6 +116,7 @@ TriggerPage::TriggerPage ()
 	/* Last item of strip packer, "+" background */
 	_strip_packer.pack_end (_no_strips, true, true);
 	_no_strips.set_can_focus ();
+	QuickHelp::set (_no_strips, N_("Empty area"), N_("Drag a clip here from the library on the right to make a new track with that clip in its first slot."));
 	_no_strips.add_events (Gdk::BUTTON_PRESS_MASK | Gdk::BUTTON_RELEASE_MASK);
 	_no_strips.set_size_request (PX_SCALE (20), -1);
 	if (UIConfiguration::instance().get_render_plus_hints ()) {

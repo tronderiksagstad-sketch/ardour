@@ -196,7 +196,7 @@ lower (string const& s)
 }
 
 static QuickHelp::Text const*
-find_text (string const& key)
+find_text (string const& key, bool prefix_ok = true)
 {
 	static std::map<string, QuickHelp::Text const*> index;
 	if (index.empty ()) {
@@ -208,6 +208,9 @@ find_text (string const& key)
 	std::map<string, QuickHelp::Text const*>::const_iterator i = index.find (k);
 	if (i != index.end ()) {
 		return i->second;
+	}
+	if (!prefix_ok) {
+		return 0;
 	}
 	/* long tooltips: match on how they begin */
 	for (i = index.begin (); i != index.end (); ++i) {
@@ -278,7 +281,7 @@ QuickHelp::poll ()
 				key  = key_for_action (act);
 				text = strip_markup (act->property_tooltip ().get_value ());
 			}
-			if (Text const* t = find_text (label)) {
+			if (Text const* t = find_text (label, false)) {
 				show_help (_(t->title), _(t->text), key);
 			} else {
 				show_help (label, text == label ? string () : text, key);

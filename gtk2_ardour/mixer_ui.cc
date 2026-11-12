@@ -75,6 +75,7 @@
 #include "foldback_strip.h"
 #include "keyboard.h"
 #include "mixer_ui.h"
+#include "quick_help.h"
 #include "mixer_strip.h"
 #include "monitor_section.h"
 #include "opts.h"
@@ -221,6 +222,9 @@ Mixer_UI::Mixer_UI ()
 	group_display.get_column (1)->set_expand(true);
 	group_display.get_column (1)->set_sizing (Gtk::TREE_VIEW_COLUMN_FIXED);
 	group_display.set_name ("EditGroupList");
+	QuickHelp::set (group_display, N_("Groups"), N_("Track groups. Tick one to switch it on; grouped tracks mute, solo or move their faders together."));
+	QuickHelp::set (favorite_plugins_display, N_("Favourite plugins"), N_("Your favourite plugins. Drag one onto a strip to add it there."));
+	QuickHelp::set (scroller, N_("Mixer"), N_("One strip for each track: plugins at the top, then pan, then the fader and meter. Drag a strip's name sideways to reorder."));
 	group_display.get_selection()->set_mode (Gtk::SELECTION_SINGLE);
 	group_display.set_reorderable (true);
 	group_display.set_headers_visible (true);
