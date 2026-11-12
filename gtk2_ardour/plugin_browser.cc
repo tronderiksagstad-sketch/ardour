@@ -422,14 +422,16 @@ led (Cr const& cr, double x, double y, double r, bool on)
 
 /** the big panel, 304 x 120 */
 static void
-draw_big (Cr const& cr, Gtk::Widget& w, double x, double y, PluginBrowser::Entry const& e, PluginBrowser::KindInfo const& k)
+draw_big (Cr const& cr, Gtk::Widget& w, double x, double y, PluginBrowser::Entry const& e, PluginBrowser::KindInfo const& k, bool frame = true)
 {
 	const double W = 304, H = 120;
-	panel (cr, x, y, W, H, 7, e, true);
-	screw (cr, x + 9.5, y + 9.5);
-	screw (cr, x + W - 9.5, y + 9.5);
-	screw (cr, x + 9.5, y + H - 9.5);
-	screw (cr, x + W - 9.5, y + H - 9.5);
+	if (frame) {
+		panel (cr, x, y, W, H, 7, e, true);
+		screw (cr, x + 9.5, y + 9.5);
+		screw (cr, x + W - 9.5, y + 9.5);
+		screw (cr, x + 9.5, y + H - 9.5);
+		screw (cr, x + W - 9.5, y + H - 9.5);
+	}
 
 	string maker = Gtkmm2ext::markup_escape_text (e.maker.empty () ? string (_("Plugin")) : e.maker);
 	text_at (cr, w, "<span letter_spacing=\"1400\">" + string (g_utf8_strup (maker.c_str (), -1)) + "</span>", 9, true, e.ink, 0.8, x + 30, y + 8, W - 60, true);
@@ -762,37 +764,222 @@ private:
 class PluginPlate : public Gtk::DrawingArea
 {
 public:
-	PluginPlate () : entry (0)
+	/** one step up (-1) or down (+1) the list: the wheel, or a click on a neighbour */
+	sigc::signal<void, int> Step;
+
+	PluginPlate () : _target (0), _pos (0), _vel (0), _compact (false)
 	{
-		const float s = UIConfiguration::instance ().get_ui_scale ();
-		set_size_request (rintf (350 * s), rintf (176 * s));
+		add_events (Gdk::BUTTON_PRESS_MASK | Gdk::SCROLL_MASK);
+		apply_size ();
 	}
 
-	PluginBrowser::Entry const* entry;
+	~PluginPlate () { _timer.disconnect (); }
+
+	/** the units in the rack, and which one is in the middle. A new list is put
+	 * in place at once; moving within the same list slides. */
+	void set_rack (std::vector<PluginBrowser::Entry const*> const& list, int index)
+	{
+		const bool same = list == _list;
+		_list           = list;
+		_target         = index;
+		if (!same || index < 0) {
+			_pos = std::max (0, index);
+			_vel = 0;
+			queue_draw ();
+		} else if (!_timer.connected ()) {
+			_last   = g_get_monotonic_time ();
+			_timer  = Glib::signal_timeout ().connect (sigc::mem_fun (*this, &PluginPlate::tick), 16);
+		}
+	}
+
+	/** while notes are written only the middle unit is shown, so the text box fits */
+	void set_compact (bool yn)
+	{
+		if (yn != _compact) {
+			_compact = yn;
+			apply_size ();
+			queue_draw ();
+		}
+	}
 
 protected:
+	static const int PH = 120, PITCH = 128;
+
+	void apply_size ()
+	{
+		const float s = UIConfiguration::instance ().get_ui_scale ();
+		set_size_request (rintf (350 * s), rintf ((_compact ? 150 : 224) * s));
+	}
+
+	/* a spring with a very small overshoot: a heavy unit settling into its slot */
+	bool tick ()
+	{
+		const gint64 now = g_get_monotonic_time ();
+		double       dt  = std::min (0.05, (now - _last) / 1e6);
+		_last            = now;
+		const double k = 260, c = 24;
+		_vel += (k * (_target - _pos) - c * _vel) * dt;
+		_pos += _vel * dt;
+		queue_draw ();
+		if (fabs (_target - _pos) < 0.002 && fabs (_vel) < 0.02) {
+			_pos = _target;
+			_vel = 0;
+			return false;
+		}
+		return true;
+	}
+
+	double centre_y (double H) const { return (H - PH) / 2; }
+
+	bool on_scroll_event (GdkEventScroll* ev)
+	{
+		const gint64 now = g_get_monotonic_time ();
+		if (now - _wheel_at < 110000) {
+			return true;
+		}
+		_wheel_at = now;
+		if (ev->direction == GDK_SCROLL_DOWN) {
+			Step (1);
+		} else if (ev->direction == GDK_SCROLL_UP) {
+			Step (-1);
+		}
+		return true;
+	}
+
+	bool on_button_press_event (GdkEventButton* ev)
+	{
+		if (ev->button != 1 || _compact) {
+			return false;
+		}
+		const float  s = UIConfiguration::instance ().get_ui_scale ();
+		const double H = get_allocation ().get_height () / s;
+		const double y = ev->y / s;
+		const double top = centre_y (H);
+		if (y < top - 2) {
+			Step (-1);
+		} else if (y > top + PH + 2) {
+			Step (1);
+		}
+		return true;
+	}
+
+	void blank (Cr const& cr, double W, double y)
+	{
+		Cairo::RefPtr<Cairo::LinearGradient> g = Cairo::LinearGradient::create (0, y, 0, y + PH);
+		g->add_color_stop_rgb (0, 0x42 / 255.0, 0x46 / 255.0, 0x4e / 255.0);
+		g->add_color_stop_rgb (1, 0x26 / 255.0, 0x2a / 255.0, 0x30 / 255.0);
+		cr->rectangle (0, y, W, PH);
+		cr->set_source (g);
+		cr->fill ();
+		for (int i = 0; i < 5; ++i) {
+			rgb (cr, 0x0b0c0e);
+			rounded (cr, 70, y + 34 + i * 11, W - 140, 4, 2);
+			cr->fill ();
+		}
+		ears (cr, W, y);
+	}
+
+	void ears (Cr const& cr, double W, double y)
+	{
+		rgb (cr, 0x000000, 0.45);
+		cr->rectangle (22, y, 1, PH);
+		cr->rectangle (W - 23, y, 1, PH);
+		cr->fill ();
+		rgb (cr, 0xffffff, 0.12);
+		cr->rectangle (23, y, 1, PH);
+		cr->rectangle (W - 24, y, 1, PH);
+		cr->fill ();
+		for (double sy : { 14.5, 105.5 }) {
+			screw (cr, 11.5, y + sy);
+			screw (cr, W - 11.5, y + sy);
+		}
+	}
+
 	bool on_expose_event (GdkEventExpose*)
 	{
 		Cr cr = get_window ()->create_cairo_context ();
 		const float  s = UIConfiguration::instance ().get_ui_scale ();
 		const double W = get_allocation ().get_width () / s, H = get_allocation ().get_height () / s;
 		cr->scale (s, s);
-
-		Cairo::RefPtr<Cairo::RadialGradient> g = Cairo::RadialGradient::create (W / 2, 0, 0, W / 2, 0, std::max (W, H) * 0.8);
-		g->add_color_stop_rgb (0, 0x2d / 255.0, 0x32 / 255.0, 0x3b / 255.0);
-		g->add_color_stop_rgb (0.72, 0x14 / 255.0, 0x16 / 255.0, 0x1a / 255.0);
 		cr->rectangle (0, 0, W, H);
-		cr->set_source (g);
-		cr->fill ();
+		cr->clip ();
 
-		if (entry) {
-			draw_big (cr, *this, (W - 304) / 2, (H - 120) / 2 - 4, *entry, kind_table[entry->kind]);
+		/* the inside of the rack */
+		Cairo::RefPtr<Cairo::LinearGradient> bg = Cairo::LinearGradient::create (0, 0, 0, H);
+		bg->add_color_stop_rgb (0, 0x0b / 255.0, 0x0c / 255.0, 0x0e / 255.0);
+		bg->add_color_stop_rgb (0.5, 0x10 / 255.0, 0x12 / 255.0, 0x16 / 255.0);
+		bg->add_color_stop_rgb (1, 0x0b / 255.0, 0x0c / 255.0, 0x0e / 255.0);
+		cr->rectangle (0, 0, W, H);
+		cr->set_source (bg);
+		cr->fill ();
+		for (double rx : { 0.0, W - 22 }) {
+			Cairo::RefPtr<Cairo::LinearGradient> r = Cairo::LinearGradient::create (rx, 0, rx + 22, 0);
+			r->add_color_stop_rgb (rx == 0 ? 0 : 1, 0x0c / 255.0, 0x0d / 255.0, 0x0f / 255.0);
+			r->add_color_stop_rgb (rx == 0 ? 1 : 0, 0x1d / 255.0, 0x20 / 255.0, 0x25 / 255.0);
+			cr->rectangle (rx, 0, 22, H);
+			cr->set_source (r);
+			cr->fill ();
+		}
+
+		const int    n   = (int) _list.size ();
+		const double top = centre_y (H);
+		for (int pass = 2; pass >= 0; --pass) {
+			/* the far ones first, the one in the middle last */
+			for (int i = (int) floor (_pos) - 2; i <= (int) ceil (_pos) + 2; ++i) {
+				const double d = i - _pos;
+				if ((int) std::min (2.0, floor (fabs (d) + 0.5)) != pass) {
+					continue;
+				}
+				if (i < -1 || i > n) {
+					continue;
+				}
+				if (_compact && fabs (d) > 0.02) {
+					continue;
+				}
+				const double y = top + d * PITCH;
+				if (y > H || y + PH < 0) {
+					continue;
+				}
+				if (i < 0 || i >= n) {
+					blank (cr, W, y);
+				} else {
+					PluginBrowser::Entry const& e = *_list[i];
+					panel (cr, 0, y, W, PH, 0, e, true);
+					ears (cr, W, y);
+					draw_big (cr, *this, (W - 304) / 2, y, e, kind_table[e.kind], false);
+				}
+				/* neighbours are dimmer */
+				const double a = fabs (d);
+				const double dark = a < 1 ? 0.38 * a : std::min (0.7, 0.38 + 0.32 * (a - 1));
+				rgb (cr, 0x000000, dark);
+				cr->rectangle (0, y, W, PH);
+				cr->fill ();
+			}
+		}
+
+		/* soft edges, as if the rack went on above and below */
+		for (int up = 0; up < 2; ++up) {
+			Cairo::RefPtr<Cairo::LinearGradient> f = Cairo::LinearGradient::create (0, up ? H - 30 : 0, 0, up ? H : 30);
+			f->add_color_stop_rgba (up ? 1 : 0, 0x0b / 255.0, 0x0c / 255.0, 0x0e / 255.0, 0.8);
+			f->add_color_stop_rgba (up ? 0 : 1, 0x0b / 255.0, 0x0c / 255.0, 0x0e / 255.0, 0);
+			cr->rectangle (0, up ? H - 30 : 0, W, 30);
+			cr->set_source (f);
+			cr->fill ();
 		}
 		rgb (cr, col_line);
 		cr->rectangle (0, H - 1, W, 1);
 		cr->fill ();
 		return true;
 	}
+
+private:
+	std::vector<PluginBrowser::Entry const*> _list;
+	int            _target;
+	double         _pos, _vel;
+	bool           _compact;
+	gint64         _last = 0;
+	gint64         _wheel_at = 0;
+	sigc::connection _timer;
 };
 
 /* ====================================================================== *
@@ -1280,6 +1467,7 @@ PluginBrowser::PluginBrowser ()
 
 	/* ---- right: the one you are pointing at ---- */
 	_plate = manage (new PluginPlate);
+	_plate->Step.connect ([this] (int d) { step (d); });
 	_name.set_justify (Gtk::JUSTIFY_CENTER);
 	_kind_maker.set_justify (Gtk::JUSTIFY_CENTER);
 	grey (_kind_maker, "#9aa1ac");
@@ -2549,15 +2737,33 @@ when (int64_t t)
 	return buf;
 }
 
+/* every unit of the list is a slot in the rack; the selected one is in the middle */
+void
+PluginBrowser::feed_rack ()
+{
+	std::vector<Entry const*> list;
+	int                       at = -1;
+	for (size_t i = 0; i < _rows.size (); ++i) {
+		if (_rows[i].header) {
+			continue;
+		}
+		if ((int) i == _sel) {
+			at = (int) list.size ();
+		}
+		list.push_back (&_entries[_rows[i].entry]);
+	}
+	_plate->set_compact (_editing);
+	_plate->set_rack (list, at);
+}
+
 void
 PluginBrowser::show_selected ()
 {
 	if (_editing) {
 		end_edit (false);
 	}
+	feed_rack ();
 	if (_sel < 0 || _sel >= (int) _rows.size () || _rows[_sel].header) {
-		_plate->entry = 0;
-		_plate->queue_draw ();
 		_name.set_text ("");
 		_kind_maker.set_text ("");
 		_desc.set_text ("");
@@ -2569,8 +2775,6 @@ PluginBrowser::show_selected ()
 	Entry const&    e = _entries[_rows[_sel].entry];
 	KindInfo const& k = kind_table[e.kind];
 
-	_plate->entry = &e;
-	_plate->queue_draw ();
 	_name.set_markup (string_compose ("<span size=\"x-large\" weight=\"bold\">%1</span>", Gtkmm2ext::markup_escape_text (e.name)));
 	_kind_maker.set_text (e.maker.empty () ? string (_(k.label)) : string_compose (_("%1 · by %2"), _(k.label), e.maker));
 	_desc.set_text ((e.note.empty () ? "" : "\xE2\x9C\x8E ") + e.description ());
@@ -2609,6 +2813,7 @@ PluginBrowser::start_edit ()
 		return;
 	}
 	_editing = true;
+	_plate->set_compact (true);
 	_note_text.get_buffer ()->set_text (_entries[_rows[_sel].entry].note);
 	_notes_link.hide ();
 	_note_edit.show_all ();

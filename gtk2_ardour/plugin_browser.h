@@ -213,6 +213,7 @@ private:
 	void select (int row);
 	void step (int delta);
 	void show_selected ();
+	void feed_rack ();
 	void add_entry (int entry);
 	void toggle_star (int entry);
 	void cycle_format ();
