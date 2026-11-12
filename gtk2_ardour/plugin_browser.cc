@@ -431,7 +431,7 @@ draw_big (Cr const& cr, Gtk::Widget& w, double x, double y, PluginBrowser::Entry
 	screw (cr, x + 9.5, y + H - 9.5);
 	screw (cr, x + W - 9.5, y + H - 9.5);
 
-	string maker = Glib::Markup::escape_text (e.maker.empty () ? string (_("Plugin")) : e.maker);
+	string maker = Gtkmm2ext::markup_escape_text (e.maker.empty () ? string (_("Plugin")) : e.maker);
 	text_at (cr, w, "<span letter_spacing=\"1400\">" + string (g_utf8_strup (maker.c_str (), -1)) + "</span>", 9, true, e.ink, 0.8, x + 30, y + 8, W - 60, true);
 
 	/* the screen */
@@ -454,7 +454,7 @@ draw_big (Cr const& cr, Gtk::Widget& w, double x, double y, PluginBrowser::Entry
 	}
 
 	/* the name, engraved */
-	string name = Glib::Markup::escape_text (e.name);
+	string name = Gtkmm2ext::markup_escape_text (e.name);
 	text_at (cr, w, name, 14, true, 0x000000, 0.5, x + 30, y + H - 28.5, W - 60, true);
 	text_at (cr, w, name, 14, true, e.ink, 1.0, x + 30, y + H - 27, W - 60, true);
 
@@ -561,7 +561,7 @@ protected:
 
 		if (_b._rows.empty ()) {
 			Glib::RefPtr<Pango::Layout> l = make_layout (cr, *this, 15, false);
-			l->set_text (string_compose (_("Nothing like “%1”.\nTry the kind of thing instead: “reverb”, “echo”, “piano”."), _b._search.get_text ()));
+			l->set_text (string_compose (_("Nothing like “%1”.\nTry the kind of thing instead: “reverb”, “echo”, “piano”."), std::string (_b._search.get_text ())));
 			l->set_width ((int) ((W - 60) * PANGO_SCALE));
 			l->set_wrap (Pango::WRAP_WORD_CHAR);
 			l->set_alignment (Pango::ALIGN_CENTER);
@@ -660,9 +660,9 @@ private:
 	void draw_header (Cr const& cr, PluginBrowser::Row const& r, double W)
 	{
 		Glib::RefPtr<Pango::Layout> l = make_layout (cr, *this, 11, true);
-		string m = "<span letter_spacing=\"700\">" + Glib::Markup::escape_text (r.group) + "</span>";
+		string m = "<span letter_spacing=\"700\">" + Gtkmm2ext::markup_escape_text (r.group) + "</span>";
 		if (!r.note.empty ()) {
-			m += "  <span weight=\"normal\" letter_spacing=\"0\" foreground=\"#6b7380\">" + Glib::Markup::escape_text (r.note) + "</span>";
+			m += "  <span weight=\"normal\" letter_spacing=\"0\" foreground=\"#6b7380\">" + Gtkmm2ext::markup_escape_text (r.note) + "</span>";
 		}
 		l->set_markup (m);
 		int tw, th;
@@ -738,20 +738,20 @@ private:
 				if (h.first < (int) pos || h.first + h.second > (int) name.size ()) {
 					continue;
 				}
-				out += Glib::Markup::escape_text (name.substr (pos, h.first - pos));
-				out += "<span foreground=\"#4c9aff\">" + Glib::Markup::escape_text (name.substr (h.first, h.second)) + "</span>";
+				out += Gtkmm2ext::markup_escape_text (name.substr (pos, h.first - pos));
+				out += "<span foreground=\"#4c9aff\">" + Gtkmm2ext::markup_escape_text (name.substr (h.first, h.second)) + "</span>";
 				pos = h.first + h.second;
 			}
-			out += Glib::Markup::escape_text (name.substr (pos));
+			out += Gtkmm2ext::markup_escape_text (name.substr (pos));
 			markup = out;
 		}
 		if (!e.maker.empty ()) {
-			markup += "  <span weight=\"normal\" size=\"smaller\" foreground=\"#8b93a0\">" + Glib::Markup::escape_text (e.maker) + "</span>";
+			markup += "  <span weight=\"normal\" size=\"smaller\" foreground=\"#8b93a0\">" + Gtkmm2ext::markup_escape_text (e.maker) + "</span>";
 		}
 		text_at (cr, *this, markup, 15, true, 0xe6e8eb, 1.0, tx, 10, right - tx, false);
 
 		string d = e.description ();
-		text_at (cr, *this, e.note.empty () ? Glib::Markup::escape_text (d) : "\xE2\x9C\x8E " + Glib::Markup::escape_text (d), 12.5, false, e.note.empty () ? 0x8f97a3 : 0xc9d6ea, 1.0, tx, 33, right - tx, false);
+		text_at (cr, *this, e.note.empty () ? Gtkmm2ext::markup_escape_text (d) : "\xE2\x9C\x8E " + Gtkmm2ext::markup_escape_text (d), 12.5, false, e.note.empty () ? 0x8f97a3 : 0xc9d6ea, 1.0, tx, 33, right - tx, false);
 	}
 };
 
@@ -984,9 +984,9 @@ private:
 		cr->rectangle (0.5, 0.5, W - 1, H - 1);
 		cr->stroke ();
 
-		text_at (cr, _area, string ("<span letter_spacing=\"700\">") + Glib::Markup::escape_text (_("ADD TO WHICH TRACK?")) + "</span>", 11, true, 0x9aa1ac, 1.0, 8, 10, W - 16, true);
+		text_at (cr, _area, string ("<span letter_spacing=\"700\">") + Gtkmm2ext::markup_escape_text (_("ADD TO WHICH TRACK?")) + "</span>", 11, true, 0x9aa1ac, 1.0, 8, 10, W - 16, true);
 		if (max_scroll () > 0) {
-			text_at (cr, _area, Glib::Markup::escape_text (_("Hold near the top or bottom to scroll")), 11.5, false, 0x6b7380, 1.0, 8, 27, W - 16, true);
+			text_at (cr, _area, Gtkmm2ext::markup_escape_text (_("Hold near the top or bottom to scroll")), 11.5, false, 0x6b7380, 1.0, 8, 27, W - 16, true);
 		}
 
 		cr->save ();
@@ -1906,7 +1906,7 @@ PluginBrowser::update_chip ()
 	}
 	char col[16];
 	snprintf (col, sizeof (col), "#%06x", (unsigned) (r->presentation_info ().color () >> 8));
-	_chip.set_text (string_compose ("%1  <span foreground=\"%2\">\xE2\x97\x8F</span>  <b>%3</b>  \xE2\x96\xBE", _("Add to"), col, Glib::Markup::escape_text (r->name ())), true);
+	_chip.set_text (string_compose ("%1  <span foreground=\"%2\">\xE2\x97\x8F</span>  <b>%3</b>  \xE2\x96\xBE", _("Add to"), col, Gtkmm2ext::markup_escape_text (r->name ())), true);
 }
 
 void
@@ -1921,7 +1921,7 @@ PluginBrowser::rack_say (string const& text)
 	std::shared_ptr<Route> r = _target.lock ();
 	if (r && r->nth_plugin (0)) {
 		_rack_msg.set_markup (string_compose ("<span foreground=\"#7d8590\">%1</span>",
-		                                      Glib::Markup::escape_text (_("Double-click a unit to open it. Click to select it, Delete takes it off. Drag to change the order. Ctrl+Z undoes."))));
+		                                      Gtkmm2ext::markup_escape_text (_("Double-click a unit to open it. Click to select it, Delete takes it off. Drag to change the order. Ctrl+Z undoes."))));
 	} else {
 		_rack_msg.set_text ("");
 	}
@@ -1935,7 +1935,7 @@ PluginBrowser::rack_changed ()
 		char col[16];
 		snprintf (col, sizeof (col), "#%06x", (unsigned) (r->presentation_info ().color () >> 8));
 		_rack_title.set_markup (string_compose ("<span foreground=\"%1\">\xE2\x97\x8F</span> <b>%2</b>   <span foreground=\"#7d8590\">%3</span>",
-		                                        col, Glib::Markup::escape_text (r->name ()), _("the track's plugin list")));
+		                                        col, Gtkmm2ext::markup_escape_text (r->name ()), _("the track's plugin list")));
 	} else {
 		_rack_title.set_text ("");
 	}
@@ -2065,7 +2065,7 @@ PluginBrowser::rack_expose (GdkEventExpose*)
 		rgb (cr, u.glow);
 		cr->rectangle (x + 12, y + 21, 14, 2);
 		cr->fill ();
-		text_at (cr, *_rack, Glib::Markup::escape_text (u.name), 11, true, u.ink, 1.0, x + 38, y + 14, u.w - 56, false);
+		text_at (cr, *_rack, Gtkmm2ext::markup_escape_text (u.name), 11, true, u.ink, 1.0, x + 38, y + 14, u.w - 56, false);
 		led (cr, x + u.w - 10, y + 22, 2.5, true);
 		if (selected) {
 			rgb (cr, col_accent);
@@ -2571,7 +2571,7 @@ PluginBrowser::show_selected ()
 
 	_plate->entry = &e;
 	_plate->queue_draw ();
-	_name.set_markup (string_compose ("<span size=\"x-large\" weight=\"bold\">%1</span>", Glib::Markup::escape_text (e.name)));
+	_name.set_markup (string_compose ("<span size=\"x-large\" weight=\"bold\">%1</span>", Gtkmm2ext::markup_escape_text (e.name)));
 	_kind_maker.set_text (e.maker.empty () ? string (_(k.label)) : string_compose (_("%1 · by %2"), _(k.label), e.maker));
 	_desc.set_text ((e.note.empty () ? "" : "\xE2\x9C\x8E ") + e.description ());
 	_format.set_text (PluginManager::plugin_type_name (e.variants[e.variant]->type, true) + (e.variants.size () > 1 ? " \xE2\x96\xBE" : ""));

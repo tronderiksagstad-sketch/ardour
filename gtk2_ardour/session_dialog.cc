@@ -227,9 +227,9 @@ friendly_date (int64_t when)
 	                       - (int) Glib::Date (t.get_day_of_month (), (Glib::Date::Month) t.get_month (), t.get_year ()).get_julian ();
 
 	if (days == 0) {
-		return string_compose (_("Today, %1"), t.format ("%H:%M"));
+		return string_compose (_("Today, %1"), std::string (t.format ("%H:%M")));
 	} else if (days == 1) {
-		return string_compose (_("Yesterday, %1"), t.format ("%H:%M"));
+		return string_compose (_("Yesterday, %1"), std::string (t.format ("%H:%M")));
 	} else if (t.get_year () == now.get_year ()) {
 		return t.format ("%-d %b");
 	}

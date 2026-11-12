@@ -361,7 +361,7 @@ CommandPalette::highlighted (Item const& it) const
 			out += want ? "<span weight=\"heavy\" underline=\"single\">" : "</span>";
 			on = want;
 		}
-		out += Glib::Markup::escape_text (chars[i]);
+		out += Gtkmm2ext::markup_escape_text (chars[i]);
 	}
 	if (on) {
 		out += "</span>";
@@ -372,7 +372,7 @@ CommandPalette::highlighted (Item const& it) const
 	for (std::string const& c : where) {
 		w += c;
 	}
-	return string_compose ("<span weight=\"bold\">%1</span>\n<span size=\"smaller\" alpha=\"65%%\">%2</span>", out, Glib::Markup::escape_text (w));
+	return string_compose ("<span weight=\"bold\">%1</span>\n<span size=\"smaller\" alpha=\"65%%\">%2</span>", out, Gtkmm2ext::markup_escape_text (w));
 }
 
 void
@@ -590,7 +590,7 @@ CommandPalette::run (size_t n)
 static void
 say (std::string const& text)
 {
-	ArdourMessageDialog msg (string_compose ("<span size=\"large\">%1</span>", Glib::Markup::escape_text (text)), true);
+	ArdourMessageDialog msg (string_compose ("<span size=\"large\">%1</span>", Gtkmm2ext::markup_escape_text (text)), true);
 	msg.set_position (Gtk::WIN_POS_CENTER);
 	ARDOUR_UI_UTILS::enlarge_fonts (msg, 1.25);
 	msg.run ();

@@ -29,6 +29,7 @@
 #include "gtkmm2ext/actions.h"
 #include "gtkmm2ext/activatable.h"
 #include "gtkmm2ext/bindings.h"
+#include "gtkmm2ext/utils.h"
 
 #include "quick_help.h"
 #include "ui_config.h"
@@ -138,13 +139,13 @@ QuickHelp::show_help (string const& title, string const& text, string const& key
 		_key.set_text ("");
 		return;
 	}
-	_title.set_markup (string_compose ("<span size=\"large\" weight=\"bold\">%1</span>", Glib::Markup::escape_text (title)));
-	_text.set_markup (string_compose ("<span size=\"large\">%1</span>", Glib::Markup::escape_text (text)));
+	_title.set_markup (string_compose ("<span size=\"large\" weight=\"bold\">%1</span>", Gtkmm2ext::markup_escape_text (title)));
+	_text.set_markup (string_compose ("<span size=\"large\">%1</span>", Gtkmm2ext::markup_escape_text (text)));
 	_text.set_tooltip_text ("");
 	if (key.empty ()) {
 		_key.set_text ("");
 	} else {
-		_key.set_markup (string_compose ("<span size=\"large\" font_family=\"monospace\"> %1 </span>", Glib::Markup::escape_text (key)));
+		_key.set_markup (string_compose ("<span size=\"large\" font_family=\"monospace\"> %1 </span>", Gtkmm2ext::markup_escape_text (key)));
 	}
 }
 
