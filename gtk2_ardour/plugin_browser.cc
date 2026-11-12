@@ -820,6 +820,9 @@ private:
 			string out;
 			size_t pos = 0;
 			vector<std::pair<int,int> > hits = e.hits;
+			if (e.name.size () != e.lname.size ()) {
+				hits.clear (); /* lower-casing changed the length: places would be off */
+			}
 			std::sort (hits.begin (), hits.end ());
 			for (auto const& h : hits) {
 				if (h.first < (int) pos || h.first + h.second > (int) name.size ()) {
@@ -1179,6 +1182,14 @@ PluginBrowser::show_for (std::shared_ptr<Route> route, int placement)
 	}
 	the_browser->_origin    = route;
 	the_browser->_placement = placement;
+	if (the_browser->is_visible ()) {
+		/* already open: just turn to the new track */
+		if (route) {
+			the_browser->set_target (route);
+		}
+		the_browser->present ();
+		return;
+	}
 	the_browser->_target.reset ();
 	if (route) {
 		the_browser->_target = route;
@@ -2867,6 +2878,10 @@ PluginBrowser::on_show ()
 	load_entries ();
 	_search.set_text ("");
 	_editing = false;
+	if (Session* s = ARDOUR_UI::instance ()->the_session ()) {
+		/* its tracks go when the session closes, and so does this window */
+		s->DropReferences.connect (_session_connection, invalidator (*this), [this] () { hide (); }, gui_context ());
+	}
 	_undo.clear ();
 	_rack_sel.reset ();
 	_rack_note.clear ();
@@ -2895,6 +2910,8 @@ void
 PluginBrowser::on_hide ()
 {
 	close_picker ();
+	_undo.clear ();
+	_session_connection.disconnect ();
 	_route_connection.disconnect ();
 	Gtk::Window::on_hide ();
 }

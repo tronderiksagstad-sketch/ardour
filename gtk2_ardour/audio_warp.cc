@@ -241,9 +241,15 @@ AudioWarp::render (shared_ptr<AudioRegion> orig, shared_ptr<AudioRegion> placed_
 		sl.push_back (s);
 	}
 
+	/* A warped region that was trimmed or split since stays trimmed: the new
+	 * files cover the same stretch of time as the ones they replace. */
+	const bool        was_warped = placed_like->extra_xml (warp_node_name) != 0;
+	const samplepos_t keep_start = was_warped ? std::max<samplepos_t> (0, std::min<samplepos_t> (placed_like->start_sample (), len - 1)) : 0;
+	const samplecnt_t keep_len   = was_warped ? std::max<samplecnt_t> (1, std::min<samplecnt_t> (placed_like->length_samples (), len - keep_start)) : len;
+
 	PropertyList plist (placed_like->derive_properties ());
-	plist.add (Properties::start, timepos_t (0));
-	plist.add (Properties::length, timecnt_t (len));
+	plist.add (Properties::start, timepos_t (keep_start));
+	plist.add (Properties::length, timecnt_t (keep_len));
 	plist.add (Properties::name, placed_like->name ());
 	plist.add (Properties::whole_file, false);
 
@@ -271,6 +277,15 @@ AudioWarp::render (shared_ptr<AudioRegion> orig, shared_ptr<AudioRegion> placed_
 	}
 	rv->add_extra_xml (*node);
 	return rv;
+}
+
+/* Where the first sample of a region's (warped) audio file sits on the
+ * timeline. For a warped region that was trimmed at the front this is before
+ * the region's own position. */
+static samplepos_t
+file_position (shared_ptr<AudioRegion> r)
+{
+	return r->position_sample () - (r->extra_xml (warp_node_name) ? r->start_sample () : 0);
 }
 
 /* swap `old` for `nr` in its playlist, as part of the current undo step */
@@ -307,8 +322,9 @@ AudioWarp::quantize (std::vector<shared_ptr<AudioRegion> > const& regions, Tempo
 		originals.push_back (orig);
 		std::vector<samplepos_t> hits;
 		detect_hits (orig, hits);
+		const samplepos_t pos = file_position (r);
 		for (samplepos_t h : hits) {
-			guide.push_back (r->position_sample () + h);
+			guide.push_back (pos + h);
 		}
 	}
 	std::sort (guide.begin (), guide.end ());
@@ -334,7 +350,7 @@ AudioWarp::quantize (std::vector<shared_ptr<AudioRegion> > const& regions, Tempo
 	std::set<shared_ptr<Playlist> > touched;
 	for (size_t n = 0; n < regions.size (); ++n) {
 		shared_ptr<AudioRegion> const& r   = regions[n];
-		const samplepos_t              pos = r->position_sample ();
+		const samplepos_t              pos = file_position (r);
 		const samplecnt_t              len = originals[n]->length_samples ();
 		Map                            m;
 		for (samplepos_t h : merged) {

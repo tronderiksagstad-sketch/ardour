@@ -190,11 +190,11 @@ smf_read (string const& path, std::vector<ScoreNote>& notes)
 	if (div <= 0 || (div & 0x8000)) {
 		return false;
 	}
-	size_t pos = 8 + ((p[4] << 24) | (p[5] << 16) | (p[6] << 8) | p[7]);
+	size_t pos = 8 + (((size_t) p[4] << 24) | ((size_t) p[5] << 16) | ((size_t) p[6] << 8) | p[7]);
 
 	while (pos + 8 <= len) {
 		const bool   is_track = !d.compare (pos, 4, "MTrk");
-		const size_t clen     = ((size_t) p[pos + 4] << 24) | (p[pos + 5] << 16) | (p[pos + 6] << 8) | p[pos + 7];
+		const size_t clen     = ((size_t) p[pos + 4] << 24) | ((size_t) p[pos + 5] << 16) | ((size_t) p[pos + 6] << 8) | p[pos + 7];
 		pos += 8;
 		const size_t end = std::min (len, pos + clen);
 		if (!is_track) {

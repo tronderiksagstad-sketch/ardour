@@ -189,6 +189,7 @@ private:
 	bool                   _editing;
 	std::string            _tip;
 	PBD::ScopedConnection  _route_connection;
+	PBD::ScopedConnection  _session_connection;
 	PBD::ScopedConnection  _manager_connection;
 	sigc::connection       _idle;
 

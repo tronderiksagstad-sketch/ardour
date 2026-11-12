@@ -2037,8 +2037,18 @@ AudioRegionView::update_warp_markers ()
 	const double   half = std::max (2.0, rint (3.0 * UIConfiguration::instance ().get_ui_scale ()));
 	const uint32_t c    = UIConfiguration::instance ().color ("gtk_bg_selected");
 
+	/* markers count from the start of the warped audio; a region trimmed at
+	 * the front starts later than that */
+	const samplepos_t off = region ()->start_sample ();
+	const samplecnt_t len = region ()->length_samples ();
+
 	for (size_t i = 0; i < m.size (); ++i) {
-		const double px = trackview.editor ().sample_to_pixel (m[i].out);
+		const samplepos_t at = m[i].out - off;
+		if (at <= 0 || at >= len) {
+			warp_handles[i]->hide (); /* trimmed away */
+			continue;
+		}
+		const double px = trackview.editor ().sample_to_pixel (at);
 		warp_handles[i]->set (ArdourCanvas::Rect (px - half, 1.0, px + half, _height - 1.0));
 		warp_handles[i]->set_fill_color (Gtkmm2ext::change_alpha (c, 0.55));
 		warp_handles[i]->raise_to_top ();
@@ -2084,8 +2094,12 @@ AudioRegionView::warp_handle_event (GdkEvent* ev, int index)
 		AudioWarp::Map m;
 		AudioWarp::markers (audio_region (), m);
 		EditingContext& ed  = trackview.editor ();
-		const double    min = (index > 0 ? ed.sample_to_pixel (m[index - 1].out) : 0) + 4;
-		const double    max = (index + 1 < (int) m.size () ? ed.sample_to_pixel (m[index + 1].out) : _pixel_width) - 4;
+		if (index >= (int) m.size ()) {
+			return true;
+		}
+		const samplepos_t off = region ()->start_sample ();
+		const double    min = (index > 0 ? std::max (0.0, ed.sample_to_pixel (m[index - 1].out - off)) : 0) + 4;
+		const double    max = (index + 1 < (int) m.size () ? std::min (_pixel_width, ed.sample_to_pixel (m[index + 1].out - off)) : _pixel_width) - 4;
 		const double    px  = std::max (min, std::min (max, _warp_drag_px0 + ev->motion.x - _warp_drag_x0));
 		const double    half = (h->get ().x1 - h->get ().x0) / 2.0;
 		h->set (ArdourCanvas::Rect (px - half, 1.0, px + half, _height - 1.0));
@@ -2102,7 +2116,7 @@ AudioRegionView::warp_handle_event (GdkEvent* ev, int index)
 		if (fabs (px - _warp_drag_px0) < 1.0) {
 			return true; /* just a click */
 		}
-		const samplecnt_t out = trackview.editor ().pixel_to_sample (px);
+		const samplecnt_t out = trackview.editor ().pixel_to_sample (px) + region ()->start_sample ();
 		/* re-render once this event is done: the region (and this view)
 		 * gets replaced by the newly rendered one */
 		std::shared_ptr<ARDOUR::AudioRegion> ar = audio_region ();
