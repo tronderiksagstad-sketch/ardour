@@ -419,6 +419,9 @@ private:
 class ProcessorBox : public Gtk::HBox, public PluginInterestedObject, public ARDOUR::SessionHandlePtr
 {
 public:
+	/** open the plugin browser for the processor box whose menu is open */
+	static void browse_plugins () { rb_choose_plugin (); }
+
 	enum ProcessorOperation {
 		ProcessorsCut,
 		ProcessorsCopy,

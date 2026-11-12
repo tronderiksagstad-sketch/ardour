@@ -92,6 +92,7 @@
 #include "mixer_strip.h"
 #include "plugin_pin_dialog.h"
 #include "plugin_selector.h"
+#include "plugin_browser.h"
 #include "plugin_ui.h"
 #include "port_insert_ui.h"
 #include "processor_box.h"
@@ -2776,7 +2777,6 @@ ProcessorBox::processor_button_press_event (GdkEventButton *ev, ProcessorEntry* 
 	} else if (!processor && ev->button == 1 && ev->type == GDK_2BUTTON_PRESS) {
 
 		choose_plugin ();
-		_get_plugin_selector()->show_manager ();
 	}
 
 	return ret;
@@ -2837,7 +2837,8 @@ ProcessorBox::deselect_all_processors ()
 void
 ProcessorBox::choose_plugin ()
 {
-	_get_plugin_selector()->set_interested_object (*this);
+	/* the plugin browser: pick a plugin, it goes on this track; stays open for more */
+	PluginBrowser::show_for (_route, _placement);
 }
 
 /** @return true if an error occurred, otherwise false */

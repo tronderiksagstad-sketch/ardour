@@ -51,6 +51,7 @@
 #include "control_point.h"
 #include "editing.h"
 #include "editor.h"
+#include "plugin_browser.h"
 #include "quick_help.h"
 #include "gui_thread.h"
 #include "luainstance.h"
@@ -676,6 +677,7 @@ Editor::register_actions ()
 		Glib::RefPtr<ToggleAction>::cast_static (act)->set_active (UIConfiguration::instance ().get_show_track_meters ());
 		act = ActionManager::register_toggle_action (editor_actions, X_("ToggleTrackLevelBars"), _("Show Track Level Bars"), sigc::mem_fun (*this, &Editor::set_track_level_bars_visible));
 		Glib::RefPtr<ToggleAction>::cast_static (act)->set_active (UIConfiguration::instance ().get_show_track_level_bars ());
+		ActionManager::register_action (editor_actions, X_("add-plugin"), _("Add Plugin..."), sigc::ptr_fun (&PluginBrowser::show_for_selected));
 		act = ActionManager::register_toggle_action (editor_actions, X_("ToggleQuickHelp"), _("Quick Help"), sigc::ptr_fun (&QuickHelp::toggled));
 		Glib::RefPtr<ToggleAction>::cast_static (act)->set_active (UIConfiguration::instance ().get_show_quick_help ());
 	}

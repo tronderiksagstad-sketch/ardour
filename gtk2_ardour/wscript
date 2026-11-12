@@ -105,6 +105,8 @@ gtk2_ardour_sources = [
         'audio_warp.cc',
         'editor_score.cc',
         'quick_help.cc',
+        'plugin_browser.cc',
+        'plugin_browser_texts.cc',
         'quick_help_texts.cc',
         'editor_warp.cc',
         'editor_mouse.cc',

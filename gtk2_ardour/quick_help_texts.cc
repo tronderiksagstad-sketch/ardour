@@ -155,6 +155,7 @@ const QuickHelp::Text QuickHelp::widget_texts[] = {
 	{ "stem export...", N_("Stem export"), N_("Exports every track or bus as its own file, for mixing somewhere else.") },
 	{ "add track, bus or vca...", N_("Add track"), N_("Adds audio tracks, MIDI tracks or busses, with all the options.") },
 	{ "add mono track", N_("Add mono track"), N_("Adds one mono audio track at the bottom. Good for a voice, a guitar or one microphone.") },
+	{ "add plugin...", N_("Add plugin"), N_("Opens the plugin browser for the selected track: search your plugins, click one to add it, Esc to close.") },
 	{ "add stereo track", N_("Add stereo track"), N_("Adds one stereo audio track at the bottom. Good for keyboards or a stereo microphone pair.") },
 	{ "search...", N_("Search"), N_("Type to find any command, track, marker or plugin.") },
 	{ "undo", N_("Undo"), N_("Takes back the last thing you did.") },

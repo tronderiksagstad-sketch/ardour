@@ -502,6 +502,7 @@
     <menu action='TrackMenu'>
       <menuitem action='add-mono-track'/>
       <menuitem action='add-stereo-track'/>
+      <menuitem action='add-plugin'/>
       <menuitem action='AddTrackBus'/>
 #ifdef MIXBUS
       <menuitem action='addExistingAudioFiles'/>

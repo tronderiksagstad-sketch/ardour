@@ -58,6 +58,7 @@
 #include "plugin_selector.h"
 #include "ardour_ui.h"
 #include "plugin_utils.h"
+#include "processor_box.h"
 #include "gui_thread.h"
 #include "ui_config.h"
 #include "utils.h"
@@ -1006,7 +1007,7 @@ PluginSelector::build_plugin_menu ()
 	Gtk::Menu* favs = create_favs_menu(all_plugs);
 	items.push_back (MenuElem (_("Favorites"), *manage (favs)));
 
-	items.push_back (MenuElem (_("Plugin Selector..."), sigc::mem_fun (*this, &PluginSelector::show_manager)));
+	items.push_back (MenuElem (_("Browse all plugins..."), sigc::ptr_fun (&ProcessorBox::browse_plugins)));
 	items.push_back (SeparatorElem ());
 
 	Menu* charts = create_charts_menu(all_plugs);
