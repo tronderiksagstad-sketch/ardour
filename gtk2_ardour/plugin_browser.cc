@@ -879,6 +879,276 @@ protected:
 };
 
 /* ====================================================================== *
+ * the list of tracks to add to
+ * ====================================================================== */
+
+/** A small list that opens under the "Add to" button when the pointer rests
+ * on it. It shows eight tracks at a time; holding the pointer near its top
+ * or bottom edge scrolls it, faster the nearer the edge, so a long list
+ * needs neither a click to open nor the wheel to reach the end. A click
+ * picks a track; leaving the list closes it.
+ */
+class TrackPicker : public Gtk::Window
+{
+public:
+	struct Item {
+		std::weak_ptr<Route> route;
+		string               name;
+		string               what;
+		uint32_t             colour;
+		bool                 current;
+	};
+
+	TrackPicker ()
+		: Gtk::Window (Gtk::WINDOW_POPUP)
+		, _scroll (0)
+		, _vel (0)
+		, _hover (-1)
+		, _py (-1)
+	{
+		_area.add_events (Gdk::POINTER_MOTION_MASK | Gdk::BUTTON_PRESS_MASK | Gdk::ENTER_NOTIFY_MASK | Gdk::LEAVE_NOTIFY_MASK | Gdk::SCROLL_MASK);
+		_area.signal_expose_event ().connect (sigc::mem_fun (*this, &TrackPicker::expose));
+		_area.signal_motion_notify_event ().connect (sigc::mem_fun (*this, &TrackPicker::motion));
+		_area.signal_button_press_event ().connect (sigc::mem_fun (*this, &TrackPicker::press));
+		_area.signal_scroll_event ().connect (sigc::mem_fun (*this, &TrackPicker::wheel));
+		_area.signal_enter_notify_event ().connect ([this] (GdkEventCrossing*) { Entered (); return false; });
+		_area.signal_leave_notify_event ().connect ([this] (GdkEventCrossing*) {
+			_vel   = 0;
+			_hover = -1;
+			_py    = -1;
+			_area.queue_draw ();
+			Left ();
+			return false;
+		});
+		add (_area);
+		_area.show ();
+	}
+
+	sigc::signal<void, std::shared_ptr<Route> > Picked;
+	sigc::signal<void>                          Entered;
+	sigc::signal<void>                          Left;
+
+	/** show the list with its top edge at (x_centre, y_top), in screen pixels */
+	void open (vector<Item> const& items, int x_centre, int y_top)
+	{
+		_items = items;
+		_vel   = 0;
+		_hover = -1;
+		_py    = -1;
+		/* open with the current track in view */
+		_scroll = 0;
+		for (size_t i = 0; i < _items.size (); ++i) {
+			if (_items[i].current) {
+				_scroll = i * Row - view_h () / 2 + Row / 2;
+			}
+		}
+		clamp ();
+
+		const double s = scale ();
+		const int w = (int) rint (Width * s), h = (int) rint ((ViewTop + view_h () + PadBottom) * s);
+		_area.set_size_request (w, h);
+		resize (w, h);
+		Glib::RefPtr<Gdk::Screen> sc = Gdk::Screen::get_default ();
+		int x = x_centre - w / 2;
+		x = std::max (0, std::min (x, sc->get_width () - w));
+		move (x, std::max (0, std::min (y_top, sc->get_height () - h)));
+		show ();
+		_area.queue_draw ();
+		if (!_tick.connected ()) {
+			_tick = Glib::signal_timeout ().connect (sigc::mem_fun (*this, &TrackPicker::tick), 30);
+		}
+	}
+
+	void close ()
+	{
+		_tick.disconnect ();
+		hide ();
+	}
+
+private:
+	/* sizes before UI scaling */
+	enum { Width = 310, ViewTop = 48, Row = 40, Visible = 8, PadBottom = 8 };
+
+	Gtk::DrawingArea _area;
+	vector<Item>     _items;
+	double           _scroll;
+	double           _vel;   ///< pixels per tick
+	int              _hover;
+	double           _py;    ///< pointer height in the list, or -1
+	sigc::connection _tick;
+
+	double scale () const { return UIConfiguration::instance ().get_ui_scale (); }
+	double view_h () const { return std::min<size_t> (_items.size (), Visible) * Row - 2.0; }
+	double max_scroll () const { return std::max (0.0, _items.size () * Row - 2.0 - view_h ()); }
+	void   clamp () { _scroll = std::max (0.0, std::min (_scroll, max_scroll ())); }
+
+	int row_at (double y) const
+	{
+		if (y < ViewTop || y >= ViewTop + view_h ()) {
+			return -1;
+		}
+		const int r = (int) floor ((y - ViewTop + _scroll) / Row);
+		return (r >= 0 && r < (int) _items.size ()) ? r : -1;
+	}
+
+	bool tick ()
+	{
+		if (_vel != 0) {
+			const double before = _scroll;
+			_scroll += _vel;
+			clamp ();
+			if (_scroll != before) {
+				/* the list moved under a pointer that stayed still */
+				_hover = _py >= 0 ? row_at (_py) : -1;
+				_area.queue_draw ();
+			}
+		}
+		return true;
+	}
+
+	bool motion (GdkEventMotion* ev)
+	{
+		_py = ev->y / scale ();
+		const double f    = (_py - ViewTop) / view_h ();
+		const double zone = 0.28;
+		if (max_scroll () <= 0 || f < 0 || f > 1) {
+			_vel = 0;
+		} else if (f < zone) {
+			_vel = -std::min (1.0, (zone - f) / zone) * 16;
+		} else if (f > 1 - zone) {
+			_vel = std::min (1.0, (f - (1 - zone)) / zone) * 16;
+		} else {
+			_vel = 0;
+		}
+		const int h = row_at (_py);
+		if (h != _hover) {
+			_hover = h;
+			_area.queue_draw ();
+		}
+		return true;
+	}
+
+	bool wheel (GdkEventScroll* ev)
+	{
+		_scroll += (ev->direction == GDK_SCROLL_UP) ? -Row : (ev->direction == GDK_SCROLL_DOWN) ? Row : 0;
+		clamp ();
+		_hover = _py >= 0 ? row_at (_py) : -1;
+		_area.queue_draw ();
+		return true;
+	}
+
+	bool press (GdkEventButton* ev)
+	{
+		if (ev->button != 1) {
+			return false;
+		}
+		const int r = row_at (ev->y / scale ());
+		if (r >= 0) {
+			std::shared_ptr<Route> route = _items[r].route.lock ();
+			close ();
+			if (route) {
+				Picked (route);
+			}
+		}
+		return true;
+	}
+
+	bool expose (GdkEventExpose*)
+	{
+		Cr cr = _area.get_window ()->create_cairo_context ();
+		const double s = scale ();
+		cr->scale (s, s);
+		const double W = Width, VH = view_h (), H = ViewTop + VH + PadBottom;
+
+		rgb (cr, 0x1e2127);
+		cr->paint ();
+		rgb (cr, 0x3a404a);
+		cr->set_line_width (1);
+		cr->rectangle (0.5, 0.5, W - 1, H - 1);
+		cr->stroke ();
+
+		text_at (cr, _area, string ("<span letter_spacing=\"700\">") + Glib::Markup::escape_text (_("ADD TO WHICH TRACK?")) + "</span>", 11, true, 0x9aa1ac, 1.0, 8, 10, W - 16, true);
+		if (max_scroll () > 0) {
+			text_at (cr, _area, Glib::Markup::escape_text (_("Hold near the top or bottom to scroll")), 11.5, false, 0x6b7380, 1.0, 8, 27, W - 16, true);
+		}
+
+		cr->save ();
+		cr->rectangle (0, ViewTop, W, VH);
+		cr->clip ();
+		for (size_t i = 0; i < _items.size (); ++i) {
+			const double y = ViewTop + i * Row - _scroll;
+			if (y + Row < ViewTop || y > ViewTop + VH) {
+				continue;
+			}
+			Item const& it = _items[i];
+			if (it.current || (int) i == _hover) {
+				rgb (cr, it.current ? col_sel : 0x2a2f37);
+				rounded (cr, 8, y, W - 16, Row - 2, 8);
+				cr->fill ();
+			}
+			rgb (cr, it.colour);
+			cr->begin_new_sub_path ();
+			cr->arc (23, y + 19, 5, 0, 2 * M_PI);
+			cr->fill ();
+
+			double right = W - 18;
+			if (it.current) {
+				Glib::RefPtr<Pango::Layout> l = make_layout (cr, _area, 13, true);
+				l->set_text ("\xE2\x9C\x93");
+				int tw, th;
+				l->get_pixel_size (tw, th);
+				rgb (cr, col_accent);
+				show_text (cr, l, right - tw, y + 19 - th / 2.0);
+				right -= tw + 8;
+			}
+			{
+				Glib::RefPtr<Pango::Layout> l = make_layout (cr, _area, 12, false);
+				l->set_text (it.what);
+				int tw, th;
+				l->get_pixel_size (tw, th);
+				rgb (cr, 0x8b93a0);
+				show_text (cr, l, right - tw, y + 19 - th / 2.0);
+				right -= tw + 10;
+			}
+			{
+				Glib::RefPtr<Pango::Layout> l = make_layout (cr, _area, 14, true);
+				l->set_text (it.name);
+				l->set_width ((int) ((right - 38) * PANGO_SCALE));
+				l->set_ellipsize (Pango::ELLIPSIZE_END);
+				int tw, th;
+				l->get_pixel_size (tw, th);
+				rgb (cr, 0xe6e8eb);
+				show_text (cr, l, 38, y + 19 - th / 2.0);
+			}
+		}
+
+		/* more above, more below */
+		for (int top = 1; top >= 0; --top) {
+			if (top ? _scroll <= 2 : _scroll >= max_scroll () - 2) {
+				continue;
+			}
+			const double y0 = top ? ViewTop : ViewTop + VH - 26;
+			Cairo::RefPtr<Cairo::LinearGradient> g = Cairo::LinearGradient::create (0, y0, 0, y0 + 26);
+			const double r = 0x1e / 255.0, gr = 0x21 / 255.0, b = 0x27 / 255.0;
+			g->add_color_stop_rgba (top ? 0.2 : 0.0, r, gr, b, top ? 1.0 : 0.0);
+			g->add_color_stop_rgba (top ? 1.0 : 0.8, r, gr, b, top ? 0.0 : 1.0);
+			cr->rectangle (0, y0, W, 26);
+			cr->set_source (g);
+			cr->fill ();
+			rgb (cr, 0x9aa1ac);
+			const double cx = W / 2, ay = top ? y0 + 4 : y0 + 22;
+			cr->move_to (cx - 5, ay + (top ? 5 : -5));
+			cr->line_to (cx + 5, ay + (top ? 5 : -5));
+			cr->line_to (cx, ay);
+			cr->close_path ();
+			cr->fill ();
+		}
+		cr->restore ();
+		return true;
+	}
+};
+
+/* ====================================================================== *
  * the browser
  * ====================================================================== */
 
@@ -926,6 +1196,7 @@ PluginBrowser::PluginBrowser ()
 	, _plate (0)
 	, _rack (0)
 	, _right (0)
+	, _picker (0)
 	, _loaded (false)
 	, _placement (-1)
 	, _instruments (false)
@@ -993,7 +1264,27 @@ PluginBrowser::PluginBrowser ()
 
 	_chip.set_name ("generic button");
 	_chip.set_size_request (px (230), px (36));
-	_chip.signal_clicked.connect (sigc::mem_fun (*this, &PluginBrowser::choose_target));
+	_chip.signal_clicked.connect ([this] () {
+		_picker_open_timer.disconnect ();
+		if (_picker && _picker->is_visible ()) {
+			close_picker ();
+		} else {
+			choose_target ();
+		}
+	});
+	/* resting the pointer on it opens the list: no click needed */
+	_chip.signal_enter_notify_event ().connect ([this] (GdkEventCrossing*) {
+		_picker_close_timer.disconnect ();
+		if (!(_picker && _picker->is_visible ()) && !_picker_open_timer.connected ()) {
+			_picker_open_timer = Glib::signal_timeout ().connect ([this] () { choose_target (); return false; }, 150);
+		}
+		return false;
+	}, false);
+	_chip.signal_leave_notify_event ().connect ([this] (GdkEventCrossing*) {
+		_picker_open_timer.disconnect ();
+		picker_left ();
+		return false;
+	}, false);
 	Gtk::Alignment* chip_c = manage (new Gtk::Alignment (0.5, 0.5, 0, 0));
 	chip_c->add (_chip);
 	chip_c->set_size_request (px (350), px (68));
@@ -1013,8 +1304,8 @@ PluginBrowser::PluginBrowser ()
 	_tile_fav.signal_clicked.connect ([this] () { set_filter (-2); });
 	_tile_new.signal_clicked.connect ([this] () { set_filter (-3); });
 	auto hover = [this] (ArdourWidgets::ArdourButton& b, int filter) {
-		b.signal_enter_notify_event ().connect ([this, filter] (GdkEventCrossing*) { set_foot (tile_tip (filter)); return false; });
-		b.signal_leave_notify_event ().connect ([this] (GdkEventCrossing*) { set_foot (""); return false; });
+		b.signal_enter_notify_event ().connect ([this, filter] (GdkEventCrossing*) { set_foot (tile_tip (filter)); return false; }, false);
+		b.signal_leave_notify_event ().connect ([this] (GdkEventCrossing*) { set_foot (""); return false; }, false);
 	};
 	hover (_tile_all, -1);
 	hover (_tile_fav, -2);
@@ -1190,6 +1481,7 @@ PluginBrowser::PluginBrowser ()
 
 PluginBrowser::~PluginBrowser ()
 {
+	delete _picker;
 	for (ArdourWidgets::ArdourButton* b : _tile_kind) {
 		delete b;
 	}
@@ -1845,38 +2137,95 @@ PluginBrowser::choose_target ()
 		return a->presentation_info ().order () < b->presentation_info ().order ();
 	});
 
-	_menu.reset (new Gtk::Menu);
+	if (routes.empty ()) {
+		_rack_msg.set_text (_("This session has no tracks yet."));
+		return;
+	}
+
+	vector<TrackPicker::Item> items;
 	std::shared_ptr<Route> cur = _target.lock ();
 	for (std::shared_ptr<Route> const& r : routes) {
-		string what;
+		TrackPicker::Item it;
+		it.route = r;
+		it.name  = r->name ();
 		if (std::dynamic_pointer_cast<MidiTrack> (r)) {
-			what = r->the_instrument () ? _("MIDI") : _("MIDI · no instrument yet");
+			it.what = r->the_instrument () ? _("MIDI") : _("MIDI · no instrument yet");
 		} else if (std::dynamic_pointer_cast<Track> (r)) {
-			what = _("Audio");
+			it.what = _("Audio");
 		} else {
-			what = _("Bus");
+			it.what = _("Bus");
 		}
-		char col[16];
-		snprintf (col, sizeof (col), "#%06x", (unsigned) (r->presentation_info ().color () >> 8));
-		Gtk::MenuItem* mi  = manage (new Gtk::MenuItem);
-		Gtk::Label*    lbl = manage (new Gtk::Label);
-		lbl->set_markup (string_compose ("<span foreground=\"%1\">\xE2\x97\x8F</span>  %2%3%4   <span alpha=\"60%%\">%5</span>",
-		                                 col, (cur == r ? "<b>" : ""), Glib::Markup::escape_text (r->name ()), (cur == r ? "</b>  \xE2\x9C\x93" : ""), what));
-		lbl->set_alignment (0.0, 0.5);
-		mi->add (*lbl);
-		std::weak_ptr<Route> wr (r);
-		mi->signal_activate ().connect ([this, wr] () {
-			if (std::shared_ptr<Route> rr = wr.lock ()) {
-				if (rr != _origin.lock ()) {
-					_placement = -1;
-				}
-				set_target (rr);
-			}
-		});
-		_menu->append (*mi);
+		it.colour  = r->presentation_info ().color () >> 8;
+		it.current = (r == cur);
+		items.push_back (it);
 	}
-	_menu->show_all ();
-	Gtkmm2ext::anchored_menu_popup (_menu.get (), &_chip, "", 1, gtk_get_current_event_time ());
+
+	if (!_picker) {
+		_picker = new TrackPicker;
+		_picker->Picked.connect (sigc::mem_fun (*this, &PluginBrowser::picked));
+		_picker->Entered.connect (sigc::mem_fun (*this, &PluginBrowser::picker_entered));
+		_picker->Left.connect (sigc::mem_fun (*this, &PluginBrowser::picker_left));
+	}
+	_picker_open_timer.disconnect ();
+	_picker_close_timer.disconnect ();
+
+	/* just under the button, centred on it */
+	int cx = 0, cy = 0, ox = 0, oy = 0;
+	_chip.translate_coordinates (*this, 0, 0, cx, cy);
+	get_window ()->get_origin (ox, oy);
+	const float scale = UIConfiguration::instance ().get_ui_scale ();
+	_picker->open (items, ox + cx + _chip.get_allocation ().get_width () / 2, oy + cy + _chip.get_allocation ().get_height () + (int) rintf (6 * scale));
+}
+
+void
+PluginBrowser::close_picker ()
+{
+	_picker_open_timer.disconnect ();
+	_picker_close_timer.disconnect ();
+	if (_picker) {
+		_picker->close ();
+	}
+}
+
+void
+PluginBrowser::picker_entered ()
+{
+	_picker_close_timer.disconnect ();
+}
+
+/* the pointer left the button or the list: close, unless it comes back at once */
+void
+PluginBrowser::picker_left ()
+{
+	_picker_close_timer.disconnect ();
+	if (_picker && _picker->is_visible ()) {
+		_picker_close_timer = Glib::signal_timeout ().connect ([this] () {
+			/* look where the pointer really is, rather than trusting the order
+			 * in which "left the button" and "entered the list" arrive */
+			int x, y;
+			_picker->get_pointer (x, y);
+			if (x >= 0 && y >= 0 && x < _picker->get_width () && y < _picker->get_height ()) {
+				return false;
+			}
+			_chip.get_pointer (x, y);
+			if (x >= 0 && y >= 0 && x < _chip.get_allocation ().get_width () && y < _chip.get_allocation ().get_height ()) {
+				return false;
+			}
+			close_picker ();
+			return false;
+		}, 280);
+	}
+}
+
+void
+PluginBrowser::picked (std::shared_ptr<Route> r)
+{
+	_picker_close_timer.disconnect ();
+	if (r != _origin.lock ()) {
+		_placement = -1;
+	}
+	set_target (r);
+	_search.grab_focus ();
 }
 
 void
@@ -2129,6 +2478,7 @@ PluginBrowser::on_show ()
 void
 PluginBrowser::on_hide ()
 {
+	close_picker ();
 	_route_connection.disconnect ();
 	Gtk::Window::on_hide ();
 }
@@ -2165,7 +2515,9 @@ bool
 PluginBrowser::on_key_press_event (GdkEventKey* ev)
 {
 	if (ev->keyval == GDK_Escape) {
-		if (_editing) {
+		if (_picker && _picker->is_visible ()) {
+			close_picker ();
+		} else if (_editing) {
 			end_edit (false);
 		} else {
 			hide ();

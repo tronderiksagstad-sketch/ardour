@@ -47,6 +47,7 @@ namespace ARDOUR {
 
 class PluginList;
 class PluginPlate;
+class TrackPicker;
 
 /** The plugin browser: one window to find a plugin among hundreds and put it
  * on a track.
@@ -171,7 +172,9 @@ private:
 	std::vector<Row>       _rows;
 	std::map<std::string, std::pair<std::string, int64_t> > _meta; ///< name -> (your note, first seen)
 	std::weak_ptr<ARDOUR::Route> _origin;
-	std::unique_ptr<Gtk::Menu> _menu;
+	TrackPicker*           _picker;
+	sigc::connection       _picker_open_timer;
+	sigc::connection       _picker_close_timer;
 	bool                   _loaded;
 
 	/* where it is */
@@ -198,6 +201,10 @@ private:
 	void update_tiles ();
 	void set_target (std::shared_ptr<ARDOUR::Route>);
 	void choose_target ();
+	void close_picker ();
+	void picker_entered ();
+	void picker_left ();
+	void picked (std::shared_ptr<ARDOUR::Route>);
 	void update_chip ();
 	void select (int row);
 	void step (int delta);
@@ -221,4 +228,5 @@ private:
 
 	friend class PluginList;
 	friend class PluginPlate;
+	friend class TrackPicker;
 };
