@@ -26,6 +26,8 @@
 
 #include "ardour/types.h"
 
+#include "warp_map.h" /* Marker, Map, tidy() */
+
 namespace ARDOUR {
 	class AudioRegion;
 }
@@ -40,15 +42,6 @@ namespace ARDOUR {
  */
 namespace AudioWarp {
 
-/** one warp marker: where the hit is in the original audio, and where it
- * should play, both in samples from the start of the region */
-struct Marker {
-	ARDOUR::samplecnt_t in;
-	ARDOUR::samplecnt_t out;
-};
-
-typedef std::vector<Marker> Map;
-
 /** the unwarped original of `r` (r itself if it was never warped),
  * and r's current markers (empty if never warped) */
 std::shared_ptr<ARDOUR::AudioRegion> original (std::shared_ptr<ARDOUR::AudioRegion> r, Map& markers);
@@ -58,9 +51,6 @@ bool markers (std::shared_ptr<ARDOUR::AudioRegion> r, Map& m);
 
 /** find the hits (drum hits, note starts) in a region, in samples from its start */
 void detect_hits (std::shared_ptr<ARDOUR::AudioRegion> r, std::vector<ARDOUR::samplepos_t>& hits);
-
-/** keep markers in order and apart, inside the region; drops ones that would cross */
-void tidy (Map& m, ARDOUR::samplecnt_t length, ARDOUR::samplecnt_t min_gap);
 
 /** Quantize: find the hits in all `regions` together, move them toward the
  * nearest multiple of `grid` (strength 0..1), and replace each region with

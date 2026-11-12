@@ -121,6 +121,5 @@ private:
 	bool on_key_press_event (GdkEventKey*);
 	void on_show ();
 
-	static bool match (std::string const& text, std::string const& query, std::vector<size_t>& hits, int& score);
 	std::string highlighted (Item const&) const;
 };

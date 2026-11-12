@@ -53,6 +53,7 @@
 #include "public_editor.h"
 #include "route_time_axis.h"
 #include "selection.h"
+#include "text_match.h"
 #include "ui_config.h"
 #include "utils.h"
 
@@ -345,82 +346,33 @@ CommandPalette::collect ()
 	collect_plugins ();
 }
 
-/* Find the query in the text (case-insensitive). The whole query as one
- * piece scores highest, more so at the start of the text or of a word.
- * Otherwise its letters must appear in order, close together; matches
- * whose letters are far apart are not shown. */
-bool
-CommandPalette::match (std::string const& text, std::string const& query, std::vector<size_t>& hits, int& score)
-{
-	hits.clear ();
-	score = 0;
-
-	std::string lt, lq;
-	for (char c : text) { lt += tolower (c); }
-	for (char c : query) { lq += tolower (c); }
-
-	const size_t pos = lt.find (lq);
-	if (pos != std::string::npos) {
-		for (size_t i = 0; i < lq.size (); ++i) {
-			hits.push_back (pos + i);
-		}
-		score = 1000 - (int) pos - (int) text.size () / 4;
-		if (pos == 0) {
-			score += 300;
-		} else if (!isalnum (text[pos - 1])) {
-			score += 200;
-		}
-		return true;
-	}
-
-	size_t from = 0;
-	int    gaps = 0;
-	int    starts = 0;
-	for (char q : lq) {
-		if (q == ' ') {
-			continue;
-		}
-		size_t i = lt.find (q, from);
-		if (i == std::string::npos) {
-			return false;
-		}
-		if (!hits.empty ()) {
-			gaps += (int) (i - hits.back () - 1);
-		}
-		if (i == 0 || !isalnum (text[i - 1])) {
-			++starts;
-		}
-		hits.push_back (i);
-		from = i + 1;
-	}
-	if (hits.empty () || gaps > 3 + 2 * (int) lq.size ()) {
-		return false;
-	}
-	score = 400 + 40 * starts - 15 * gaps - (int) hits.front () / 2;
-	return true;
-}
-
 std::string
 CommandPalette::highlighted (Item const& it) const
 {
-	char accent[16];
-	snprintf (accent, sizeof (accent), "#%06x", (unsigned) (UIConfiguration::instance ().color ("gtk_bg_selected") >> 8));
-	std::set<size_t>  h (it.hits.begin (), it.hits.end ());
-	std::string       out;
-	bool              on = false;
-	for (size_t i = 0; i < it.title.size (); ++i) {
+	std::set<size_t>         h (it.hits.begin (), it.hits.end ());
+	std::vector<std::string> chars;
+	TextMatch::split_chars (it.title, chars);
+	std::string out;
+	bool        on = false;
+	for (size_t i = 0; i < chars.size (); ++i) {
 		const bool want = h.count (i) > 0;
 		if (want != on) {
 			/* no colour of its own: it has to stay readable on the selected row too */
 			out += want ? "<span weight=\"heavy\" underline=\"single\">" : "</span>";
 			on = want;
 		}
-		out += Gtkmm2ext::markup_escape_text (it.title.substr (i, 1));
+		out += Glib::Markup::escape_text (chars[i]);
 	}
 	if (on) {
 		out += "</span>";
 	}
-	return string_compose ("<span weight=\"bold\">%1</span>\n<span size=\"smaller\" alpha=\"65%%\">%2</span>", out, Gtkmm2ext::markup_escape_text (it.where));
+	std::vector<std::string> where;
+	TextMatch::split_chars (it.where, where); /* nothing but proper text reaches the markup */
+	std::string w;
+	for (std::string const& c : where) {
+		w += c;
+	}
+	return string_compose ("<span weight=\"bold\">%1</span>\n<span size=\"smaller\" alpha=\"65%%\">%2</span>", out, Glib::Markup::escape_text (w));
 }
 
 void
@@ -458,7 +410,7 @@ CommandPalette::refilter ()
 	} else {
 		for (Item const& it : _items) {
 			Item c = it;
-			if (match (c.title, q, c.hits, c.score)) {
+			if (TextMatch::match (c.title, q, c.hits, c.score)) {
 				if (!c.available) {
 					c.score -= 250;
 				}
@@ -467,9 +419,10 @@ CommandPalette::refilter ()
 		}
 		/* when the search text appears as a whole somewhere, don't show
 		 * the looser letter-by-letter matches */
-		auto whole = [&q] (Item const& it) {
+		const size_t q_chars = g_utf8_strlen (q.c_str (), -1);
+		auto whole = [q_chars] (Item const& it) {
 			/* the matched letters are one unbroken piece of the title */
-			return !it.hits.empty () && it.hits.back () - it.hits.front () + 1 == q.size ();
+			return !it.hits.empty () && it.hits.back () - it.hits.front () + 1 == q_chars;
 		};
 		bool any_whole = false;
 		for (Item const& it : found) {

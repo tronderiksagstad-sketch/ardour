@@ -132,26 +132,6 @@ AudioWarp::detect_hits (shared_ptr<AudioRegion> r, std::vector<samplepos_t>& hit
 	}
 }
 
-void
-AudioWarp::tidy (Map& m, samplecnt_t length, samplecnt_t min_gap)
-{
-	std::sort (m.begin (), m.end (), [] (Marker const& a, Marker const& b) { return a.in < b.in; });
-	Map         out;
-	samplecnt_t last_in = 0, last_out = 0;
-	for (Marker const& k : m) {
-		if (k.in < last_in + min_gap || k.out < last_out + min_gap) {
-			continue;
-		}
-		if (k.in > length - min_gap || k.out > length - min_gap) {
-			continue;
-		}
-		out.push_back (k);
-		last_in  = k.in;
-		last_out = k.out;
-	}
-	m.swap (out);
-}
-
 shared_ptr<AudioRegion>
 AudioWarp::render (shared_ptr<AudioRegion> orig, shared_ptr<AudioRegion> placed_like, Map const& markers)
 {

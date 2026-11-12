@@ -222,7 +222,9 @@ friendly_date (int64_t when)
 {
 	Glib::DateTime t     = Glib::DateTime::create_now_local (when);
 	Glib::DateTime now   = Glib::DateTime::create_now_local ();
-	const int      days  = now.get_day_of_year () - t.get_day_of_year () + 366 * (now.get_year () - t.get_year ());
+	/* whole calendar days between the two, also across New Year */
+	const int      days  = (int) Glib::Date (now.get_day_of_month (), (Glib::Date::Month) now.get_month (), now.get_year ()).get_julian ()
+	                       - (int) Glib::Date (t.get_day_of_month (), (Glib::Date::Month) t.get_month (), t.get_year ()).get_julian ();
 
 	if (days == 0) {
 		return string_compose (_("Today, %1"), t.format ("%H:%M"));
@@ -873,8 +875,14 @@ SessionDialog::existing_file_selected ()
 
 	open_button->set_sensitive(true);  //still potentially openable; checks for session archives, .ptf, and .aaf will have to occur later
 
-	/* one click opens it */
-	if (g_get_monotonic_time () > _ignore_browser_selection_until) {
+	/* one click opens it. Moving through the list with the arrow keys
+	 * only selects: Enter (or a click) opens. */
+	GdkEvent*  ev       = gtk_get_current_event ();
+	const bool by_mouse = ev && (ev->type == GDK_BUTTON_PRESS || ev->type == GDK_BUTTON_RELEASE);
+	if (ev) {
+		gdk_event_free (ev);
+	}
+	if (by_mouse && g_get_monotonic_time () > _ignore_browser_selection_until) {
 		response (RESPONSE_ACCEPT);
 	}
 }

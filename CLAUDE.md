@@ -25,6 +25,8 @@ Working branch: `memlock-fix-and-theme`.
 
 - Mockups live on the "Ardour Redesign" design canvas (claude.ai artifact P4iXDk1Sf91eiqX8BgmCu7); agree the design there before changing code.
 - Then implement in the C++ code, build with `./waf`, run under Xvfb with the Dummy backend to check on screen, and push to the working branch.
+- After touching search matching, plugin kinds or ranking, the MuseScore MIDI code or warp markers, run `tools/logic-tests.sh` (a few seconds, no Ardour build needed). New pure logic goes in its own small file with tests in `gtk2_ardour/logic_tests.cc`.
+- For a bug hunt, build a second copy with `./waf configure --address-sanitizer` in a separate git worktree and click through the features under it (`ASAN_OPTIONS=detect_leaks=0`).
 - Shallow clones need a local annotated version tag (e.g. `git tag -a 9.8 -m local <base>`) for `./waf configure`; never push that tag.
 
 ## Notes
