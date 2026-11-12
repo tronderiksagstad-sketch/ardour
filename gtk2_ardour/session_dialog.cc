@@ -311,6 +311,8 @@ SessionDialog::SessionDialog (DialogTab initial_tab, const std::string& session_
 	, _chosen_rate (48000)
 	, _chosen_format (FormatFloat)
 	, _ignore_browser_selection_until (0)
+	, _browser_press_x (0)
+	, _browser_press_y (0)
 {
 	action_group = ActionGroup::create (X_("SessionDialog"));
 
@@ -491,6 +493,7 @@ SessionDialog::SessionDialog (DialogTab initial_tab, const std::string& session_
 	set_title (PROGRAM_NAME);
 	ARDOUR_UI_UTILS::enlarge_fonts (*get_vbox (), 1.3);
 	hide_chooser_sidebar ();
+	connect_browser_clicks ();
 	update_mode (initial_tab == Open ? 2 : 0);
 	set_default_size (rintf (1240 * UIConfiguration::instance ().get_ui_scale ()), rintf (780 * UIConfiguration::instance ().get_ui_scale ()));
 }
@@ -622,23 +625,41 @@ SessionDialog::master_channel_count ()
 	return 2;
 }
 
+/* A template is for a new session only. The template tiles sit on the
+ * same screen as the recent sessions, so one of them may well be lit
+ * when an existing session is opened: it must not be applied to that. */
+bool
+SessionDialog::making_new_session () const
+{
+	return _chosen_recent.empty () && const_cast<Gtk::Notebook&> (_tabs).get_current_page () == 0;
+}
+
 bool
 SessionDialog::use_session_template () const
 {
-
-	if (template_chooser.get_selection()->count_selected_rows() > 0) {
-		return true;
-	}
-
-	return false;
+	return making_new_session () && template_is_selected ();
 }
 
 std::string
 SessionDialog::session_template_name ()
 {
-	if (template_chooser.get_selection()->count_selected_rows() > 0) {
+	return making_new_session () ? selected_template () : string ();
+}
 
-		TreeIter const iter = template_chooser.get_selection()->get_selected();
+/* what the template tiles show, whatever is being opened */
+bool
+SessionDialog::template_is_selected () const
+{
+	return const_cast<Gtk::TreeView&> (template_chooser).get_selection()->count_selected_rows() > 0;
+}
+
+std::string
+SessionDialog::selected_template () const
+{
+	Gtk::TreeView& tc (const_cast<Gtk::TreeView&> (template_chooser));
+	if (tc.get_selection()->count_selected_rows() > 0) {
+
+		TreeIter const iter = tc.get_selection()->get_selected();
 
 		if (iter) {
 			string s = (*iter)[session_template_columns.path];
@@ -875,16 +896,8 @@ SessionDialog::existing_file_selected ()
 
 	open_button->set_sensitive(true);  //still potentially openable; checks for session archives, .ptf, and .aaf will have to occur later
 
-	/* one click opens it. Moving through the list with the arrow keys
-	 * only selects: Enter (or a click) opens. */
-	GdkEvent*  ev       = gtk_get_current_event ();
-	const bool by_mouse = ev && (ev->type == GDK_BUTTON_PRESS || ev->type == GDK_BUTTON_RELEASE);
-	if (ev) {
-		gdk_event_free (ev);
-	}
-	if (by_mouse && g_get_monotonic_time () > _ignore_browser_selection_until) {
-		response (RESPONSE_ACCEPT);
-	}
+	/* nothing opens here: moving through the list with the arrow keys only
+	 * selects. A click (browser_row_clicked) or Enter opens. */
 }
 
 void
@@ -1281,8 +1294,8 @@ SessionDialog::template_button_clicked (std::string path)
 void
 SessionDialog::sync_template_buttons ()
 {
-	std::string selected = session_template_name ();
-	bool        any      = use_session_template ();
+	std::string selected = selected_template ();
+	bool        any      = template_is_selected ();
 	size_t      n        = 0;
 
 	for (Gtk::TreeModel::iterator i = template_model->children ().begin (); i != template_model->children ().end () && n < _template_buttons.size (); ++i, ++n) {
@@ -2358,6 +2371,105 @@ SessionDialog::hide_chooser_sidebar ()
 	}
 }
 
+static void
+find_tree_view_cb (GtkWidget* w, gpointer data)
+{
+	GtkWidget** found = (GtkWidget**) data;
+	if (*found) {
+		return;
+	}
+	if (GTK_IS_TREE_VIEW (w)) {
+		*found = w;
+	} else if (GTK_IS_CONTAINER (w)) {
+		gtk_container_forall (GTK_CONTAINER (w), find_tree_view_cb, data);
+	}
+}
+
+/* One click on a row of the file list does what a double click does in
+ * other programs: goes into a folder, opens a session. */
+void
+SessionDialog::connect_browser_clicks ()
+{
+	GtkWidget* paned = 0;
+	GtkWidget* list  = 0;
+	gtk_container_forall (GTK_CONTAINER (existing_session_chooser.gobj ()), find_paned_cb, &paned);
+	if (paned && gtk_paned_get_child2 (GTK_PANED (paned))) {
+		find_tree_view_cb (gtk_paned_get_child2 (GTK_PANED (paned)), &list);
+	}
+	if (!list) {
+		return;
+	}
+	typedef gboolean (*ButtonCallback) (GtkWidget*, GdkEventButton*, gpointer);
+	const ButtonCallback cb = [] (GtkWidget* w, GdkEventButton* ev, gpointer d) -> gboolean {
+		return static_cast<SessionDialog*> (d)->browser_list_button (GTK_TREE_VIEW (w), ev);
+	};
+	g_signal_connect (list, "button-press-event", G_CALLBACK (cb), this);
+	g_signal_connect (list, "button-release-event", G_CALLBACK (cb), this);
+}
+
+/* runs before the list's own handling of the click */
+bool
+SessionDialog::browser_list_button (GtkTreeView* tv, GdkEventButton* ev)
+{
+	if (ev->button != 1 || ev->window != gtk_tree_view_get_bin_window (tv)) {
+		return false;
+	}
+
+	if (g_get_monotonic_time () <= _ignore_browser_selection_until) {
+		/* the second click of a double click, arriving after the first one
+		 * already took us into a folder: it is not meant for whatever is
+		 * under the pointer now */
+		_browser_press_row.clear ();
+		return true;
+	}
+
+	std::string  row;
+	GtkTreePath* path = 0;
+	if (gtk_tree_view_get_path_at_pos (tv, (gint) ev->x, (gint) ev->y, &path, 0, 0, 0) && path) {
+		gchar* str = gtk_tree_path_to_string (path);
+		row        = str;
+		g_free (str);
+		gtk_tree_path_free (path);
+	}
+
+	if (ev->type == GDK_BUTTON_PRESS) {
+		const bool plain   = !(ev->state & (GDK_CONTROL_MASK | GDK_SHIFT_MASK));
+		_browser_press_row = plain ? row : std::string ();
+		_browser_press_x   = ev->x_root;
+		_browser_press_y   = ev->y_root;
+	} else if (ev->type == GDK_BUTTON_RELEASE) {
+		const bool clicked = !row.empty () && row == _browser_press_row
+		                     && fabs (ev->x_root - _browser_press_x) < 8 && fabs (ev->y_root - _browser_press_y) < 8;
+		_browser_press_row.clear ();
+		if (clicked) {
+			/* once the list has finished with the click itself */
+			Glib::signal_idle ().connect_once (sigc::mem_fun (*this, &SessionDialog::browser_row_clicked));
+		}
+	}
+	return false;
+}
+
+void
+SessionDialog::browser_row_clicked ()
+{
+	if (_tabs.get_current_page () != 2) {
+		return;
+	}
+	const std::string f = existing_session_chooser.get_filename ();
+	if (f.empty ()) {
+		return;
+	}
+	if (Glib::file_test (f, Glib::FILE_TEST_IS_DIR)) {
+		browser_folder_changed ();
+		existing_session_chooser.set_current_folder (f);
+		return;
+	}
+	existing_file_selected (); /* looks at the file, and says whether it can be opened */
+	if (open_button->get_sensitive ()) {
+		response (RESPONSE_ACCEPT);
+	}
+}
+
 void
 SessionDialog::update_mode (int page)
 {
@@ -2385,8 +2497,8 @@ SessionDialog::template_preview_expose (GdkEventExpose*)
 	cr->set_line_width (1);
 	cr->stroke ();
 
-	const std::string path = session_template_name ();
-	if (!use_session_template () || path.empty ()) {
+	const std::string path = selected_template ();
+	if (!template_is_selected () || path.empty ()) {
 		Glib::RefPtr<Pango::Layout> l = _template_preview.create_pango_layout (_("No tracks yet"));
 		int tw, th;
 		l->get_pixel_size (tw, th);
@@ -2499,11 +2611,10 @@ SessionDialog::start_key_press (GdkEventKey* ev)
 	return false;
 }
 
-/* The file browser opens a session on a single click. Folder changes
- * (and switching to the browser) can make GTK report a selection by
- * itself, so selections within a moment of those are ignored. */
+/* For a moment after the folder changes (or the browser is switched to),
+ * clicks on the file list are ignored: see browser_list_button(). */
 void
 SessionDialog::browser_folder_changed ()
 {
-	_ignore_browser_selection_until = g_get_monotonic_time () + 400000;
+	_ignore_browser_selection_until = g_get_monotonic_time () + 500000;
 }

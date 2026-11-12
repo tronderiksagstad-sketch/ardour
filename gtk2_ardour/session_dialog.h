@@ -342,6 +342,9 @@ private:
 	void fill_recent_list ();
 	void open_recent_path (std::string const& fullpath, bool safe_mode);
 	std::string _chosen_recent; ///< recent session clicked in the left panel
+	bool        making_new_session () const;
+	bool        template_is_selected () const;
+	std::string selected_template () const;
 	bool start_key_press (GdkEventKey*);
 
 	Gtk::VBox _template_radio_box;
@@ -363,6 +366,12 @@ private:
 	ArdourWidgets::ArdourButton _create_button;
 	int64_t _ignore_browser_selection_until;
 	void browser_folder_changed ();
+	void connect_browser_clicks ();
+	bool browser_list_button (GtkTreeView*, GdkEventButton*);
+	void browser_row_clicked ();
+	std::string _browser_press_row; ///< the row the mouse button went down on
+	double      _browser_press_x;
+	double      _browser_press_y;
 
 	/* always there */
 
