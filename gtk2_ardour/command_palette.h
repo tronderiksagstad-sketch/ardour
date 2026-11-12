@@ -110,6 +110,7 @@ private:
 	int  selected_row () const;
 	void step (int delta);
 	void run (size_t shown_index);
+	void add_plugin (ARDOUR::PluginInfoPtr);
 	void remember (std::string const& id);
 	void load_recent ();
 	void save_recent ();

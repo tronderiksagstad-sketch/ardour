@@ -108,6 +108,9 @@ public:
 	PannerUI&       panner_ui()       { return panners; }
 	PluginSelector* plugin_selector();
 
+	/** open the window of one of this strip's processors, as a double-click on it does */
+	void edit_processor (std::shared_ptr<ARDOUR::Processor> p) { processor_box.edit_processor (p); }
+
 	void fast_update ();
 	void set_embedded (bool);
 

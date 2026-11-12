@@ -20,6 +20,7 @@
 #include <cctype>
 #include <set>
 
+#include <glibmm/markup.h>
 #include <ydk/gdkkeysyms.h>
 
 #include <ytkmm/eventbox.h>
@@ -27,7 +28,10 @@
 #include "pbd/whitespace.h"
 #include "pbd/xml++.h"
 
+#include "ardour/audioengine.h"
 #include "ardour/location.h"
+#include "ardour/midi_track.h"
+#include "ardour/plugin.h"
 #include "ardour/plugin_insert.h"
 #include "ardour/plugin_manager.h"
 #include "ardour/rc_configuration.h"
@@ -44,6 +48,8 @@
 #include "ardour_ui.h"
 #include "command_palette.h"
 #include "gui_thread.h"
+#include "mixer_strip.h"
+#include "mixer_ui.h"
 #include "public_editor.h"
 #include "route_time_axis.h"
 #include "selection.h"
@@ -322,7 +328,7 @@ CommandPalette::collect_plugins ()
 		Item i;
 		i.kind   = Plugin;
 		i.title  = p->name;
-		i.where  = _("Add to the selected track");
+		i.where  = p->is_instrument () ? _("Instrument: goes on the selected MIDI track, or a new one") : _("Effect: goes on the selected track");
 		i.id     = "p:" + p->unique_id;
 		i.plugin = p;
 		_items.push_back (i);
@@ -405,7 +411,8 @@ CommandPalette::highlighted (Item const& it) const
 	for (size_t i = 0; i < it.title.size (); ++i) {
 		const bool want = h.count (i) > 0;
 		if (want != on) {
-			out += want ? string_compose ("<span foreground=\"%1\" weight=\"heavy\" underline=\"single\">", accent) : "</span>";
+			/* no colour of its own: it has to stay readable on the selected row too */
+			out += want ? "<span weight=\"heavy\" underline=\"single\">" : "</span>";
 			on = want;
 		}
 		out += Gtkmm2ext::markup_escape_text (it.title.substr (i, 1));
@@ -615,31 +622,135 @@ CommandPalette::run (size_t n)
 		}
 		break;
 
-	case Plugin: {
-		std::shared_ptr<Route> target;
-		for (TimeAxisView* tav : ed.get_selection ().tracks) {
-			if (RouteTimeAxisView* rtv = dynamic_cast<RouteTimeAxisView*> (tav)) {
-				target = rtv->route ();
-				break;
-			}
-		}
-		if (!target || !s) {
-			ArdourMessageDialog msg (_("Select a track first, then search for the plugin again."));
-			msg.run ();
-			break;
-		}
-		PluginPtr p = it.plugin->load (*s);
-		if (!p) {
-			break;
-		}
-		std::shared_ptr<Processor> processor (new PluginInsert (*s, *target, p));
-		Route::ProcessorStreams    err;
-		target->add_processor (processor, PreFader, &err, Config->get_new_plugins_active ());
+	case Plugin:
+		add_plugin (it.plugin);
 		break;
-	}
 
 	case Header:
 		break;
+	}
+}
+
+/* ---- plugins ---------------------------------------------------------- */
+
+/* a message in the middle of the screen, in readable type */
+static void
+say (std::string const& text)
+{
+	ArdourMessageDialog msg (string_compose ("<span size=\"large\">%1</span>", Glib::Markup::escape_text (text)), true);
+	msg.set_position (Gtk::WIN_POS_CENTER);
+	ARDOUR_UI_UTILS::enlarge_fonts (msg, 1.25);
+	msg.run ();
+}
+
+/* the mixer strip of a track that was only just made may not exist yet: try again a few times */
+static bool
+open_plugin_window (std::weak_ptr<Route> wr, std::weak_ptr<Processor> wp, int tries)
+{
+	std::shared_ptr<Route>        r  = wr.lock ();
+	std::shared_ptr<PluginInsert> pi = std::dynamic_pointer_cast<PluginInsert> (wp.lock ());
+	if (!r || !pi || !AudioEngine::instance ()->running ()) {
+		return false;
+	}
+	MixerStrip* strip = Mixer_UI::instance ()->strip_for_route (r);
+	if (!strip) {
+		if (tries > 0) {
+			Glib::signal_timeout ().connect (sigc::bind (sigc::ptr_fun (&open_plugin_window), wr, wp, tries - 1), 250);
+		}
+		return false;
+	}
+	if (pi->plugin ()->has_editor ()) {
+		strip->edit_processor (pi);
+	}
+	return false;
+}
+
+/** A plugin picked from the search goes where it belongs:
+ *  - an effect, on every selected track or bus that carries audio;
+ *    with none selected, we say so and do nothing;
+ *  - an instrument, on every selected MIDI track that has no instrument yet;
+ *    with none, on a new MIDI track made for it.
+ */
+void
+CommandPalette::add_plugin (PluginInfoPtr info)
+{
+	Session* s = ARDOUR_UI::instance ()->the_session ();
+	if (!s || !info) {
+		return;
+	}
+	PublicEditor& ed         = ARDOUR_UI::instance ()->the_editor ();
+	const bool    instrument = info->is_instrument ();
+
+	std::vector<std::shared_ptr<Route> > targets;
+	for (TimeAxisView* tav : ed.get_selection ().tracks) {
+		RouteTimeAxisView* rtv = dynamic_cast<RouteTimeAxisView*> (tav);
+		if (!rtv || !rtv->route () || rtv->route ()->is_monitor ()) {
+			continue;
+		}
+		std::shared_ptr<Route> r = rtv->route ();
+		if (instrument) {
+			if (rtv->is_midi_track () && !r->the_instrument ()) {
+				targets.push_back (r);
+			}
+		} else if (!rtv->is_midi_track () || r->the_instrument ()) {
+			targets.push_back (r);
+		}
+	}
+
+	std::shared_ptr<Route>     shown_route;
+	std::shared_ptr<Processor> shown;
+	size_t                     added = 0;
+
+	if (targets.empty () && !instrument) {
+		say (s->naudiotracks () == 0
+		     ? string_compose (_("%1 is an effect, and this session has no audio track yet.\n\nAdd an audio track, select it, then search for the effect again."), info->name)
+		     : string_compose (_("%1 is an effect: it needs a track to go on.\n\nSelect an audio track, then search for the effect again."), info->name));
+		return;
+	}
+
+	if (targets.empty ()) {
+		/* an instrument and no MIDI track waiting for one: make the track too */
+		const ChanCount one_midi (DataType::MIDI, 1);
+		std::list<std::shared_ptr<MidiTrack> > made;
+		try {
+			made = s->new_midi_track (one_midi, one_midi, Config->get_strict_io (), info, (ARDOUR::Plugin::PresetRecord*) 0,
+			                          std::shared_ptr<RouteGroup> (), 1, info->name, PresentationInfo::max_order, ARDOUR::Normal, true);
+		} catch (...) {
+		}
+		if (made.empty ()) {
+			say (string_compose (_("A MIDI track for %1 could not be made."), info->name));
+			return;
+		}
+		shown_route = made.front ();
+		shown       = made.front ()->the_instrument ();
+		added       = 1;
+	} else {
+		for (std::shared_ptr<Route> const& r : targets) {
+			PluginPtr p = info->load (*s);
+			if (!p) {
+				continue;
+			}
+			std::shared_ptr<Processor> processor (new PluginInsert (*s, *r, p));
+			Route::ProcessorStreams    err;
+			/* an instrument goes first, an effect last before the fader */
+			const int rv = instrument ? r->add_processor_by_index (processor, 0, &err, Config->get_new_plugins_active ())
+			                          : r->add_processor (processor, PreFader, &err, Config->get_new_plugins_active ());
+			if (rv == 0) {
+				shown_route = r;
+				shown       = processor;
+				++added;
+			}
+		}
+		if (added == 0) {
+			say (string_compose (_("%1 could not be added: its inputs and outputs do not fit the track."), info->name));
+			return;
+		}
+	}
+
+	PluginManager::instance ().stats_use_plugin (info);
+
+	if (added == 1 && shown && UIConfiguration::instance ().get_open_gui_after_adding_plugin ()) {
+		Glib::signal_timeout ().connect (sigc::bind (sigc::ptr_fun (&open_plugin_window), std::weak_ptr<Route> (shown_route), std::weak_ptr<Processor> (shown), 12), 150);
 	}
 }
 

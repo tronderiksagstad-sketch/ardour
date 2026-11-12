@@ -95,6 +95,9 @@ class Mixer_UI : public ArdourWidgets::Tabbable, public PBD::ScopedConnectionLis
 {
 public:
 	static Mixer_UI* instance();
+
+	/** the mixer strip of a track or bus; null if it has none (yet) */
+	MixerStrip* strip_for_route (std::shared_ptr<ARDOUR::Route> r) const { return strip_by_route (r); }
 	~Mixer_UI();
 
 	Gtk::Window* use_own_window (bool and_fill_it);
