@@ -18,6 +18,7 @@
 
 #pragma once
 
+#include <cmath>
 #include <map>
 #include <memory>
 #include <string>
@@ -115,6 +116,12 @@ public:
 		/* while searching */
 		double                         score;
 		std::vector<std::pair<int,int> > hits;
+		/* knobs you turned on the unit (degrees), kept while the window lives */
+		mutable double knob[3] = { NAN, NAN, NAN };
+		/* a chain: several plugins added together */
+		struct Part { std::string name; uint32_t light, dark, ink; };
+		std::vector<std::string> chain; ///< lower-case names, in order
+		std::vector<Part>        parts;
 
 		std::string description () const;
 		bool is_new () const;
@@ -147,6 +154,7 @@ private:
 	ArdourWidgets::ArdourButton _tile_all;
 	ArdourWidgets::ArdourButton _tile_fav;
 	ArdourWidgets::ArdourButton _tile_new;
+	ArdourWidgets::ArdourButton _tile_chain;
 	std::vector<ArdourWidgets::ArdourButton*> _tile_kind;
 	ArdourWidgets::ArdourButton _manage;
 	PluginList*            _list;
@@ -165,6 +173,25 @@ private:
 	Gtk::VBox              _note_edit;
 	Gtk::TextView          _note_text;
 	Gtk::Label             _foot;
+
+	/* compare: one plugin pinned as A, the one you point at is B */
+	int                    _pin;
+	ArdourWidgets::ArdourButton _hear, _hear_a, _hear_b;
+	Gtk::Label             _compare_label;
+	ArdourWidgets::ArdourButton _compare_stop;
+	Gtk::HBox              _compare_row;
+	/* hear it: a plugin on the track for a few seconds, then gone */
+	int                    _hear_entry;
+	std::weak_ptr<ARDOUR::Route>     _hear_route;
+	std::weak_ptr<ARDOUR::Processor> _hear_proc;
+	sigc::connection       _hear_timer;
+	bool                   _hear_rolled;
+	int64_t                _hear_pos;
+	/* chains: saved sets of plugins */
+	std::vector<std::pair<std::string, std::vector<std::string> > > _chains;
+	ArdourWidgets::ArdourButton _save_chain;
+	Gtk::Entry             _chain_name;
+	Gtk::HBox              _chain_row;
 	Gtk::Label             _rack_title;
 	Gtk::DrawingArea*      _rack;
 	Gtk::Label             _rack_msg;
@@ -215,6 +242,16 @@ private:
 	void show_selected ();
 	void feed_rack ();
 	void add_entry (int entry);
+	bool add_one (int entry, bool announce);
+	void pin_entry (int entry);
+	void unpin ();
+	void hear (int entry);
+	void stop_hear ();
+	void update_hear_buttons ();
+	void add_chain_entries ();
+	void begin_save_chain ();
+	void save_chain ();
+	void update_save_ui ();
 	void toggle_star (int entry);
 	void cycle_format ();
 	void start_edit ();

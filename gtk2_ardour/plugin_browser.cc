@@ -91,8 +91,11 @@ static const PluginBrowser::KindInfo kind_table[] = {
 	{ "synth", N_("Synth"), "synth", N_("Makes sound electronically."), N_("Makes sound electronically: leads, pads, basses."), 0x5fe3e0, PluginBrowser::Wave, true, "synth synthesizer synthesiser pad lead" },
 	{ "keys", N_("Keys & Organ"), "keyboard", N_("Piano, electric piano or organ."), N_("Pianos, electric pianos and organs."), 0xf1ead8, PluginBrowser::Keys, true, "piano keys organ keyboard" },
 	{ "drums", N_("Drums"), "drum kit", N_("Drum kit or drum machine."), N_("Drum kits and drum machines."), 0xffa24a, PluginBrowser::Pads, true, "drums kit percussion beat" },
-	{ "sampler", N_("Sampler"), "sampler", N_("Plays recorded sounds."), N_("Plays recorded sounds: SoundFonts, SFZ and sample libraries."), 0x6ee7a8, PluginBrowser::Sample, true, "sampler soundfont samples" }
+	{ "sampler", N_("Sampler"), "sampler", N_("Plays recorded sounds."), N_("Plays recorded sounds: SoundFonts, SFZ and sample libraries."), 0x6ee7a8, PluginBrowser::Sample, true, "sampler soundfont samples" },
+	/* not a kind of plugin: a chain of them (index 16; never a tile of its own) */
+	{ "chain", N_("Chain"), "chain", N_("Several plugins, added together."), N_("Your own set of plugins in a fixed order. One click adds them all."), 0xe5c84a, PluginBrowser::Wave, false, "chain" }
 };
+static const int ChainKind = 16;
 
 using namespace PluginKinds; /* FirstEffect ... NKinds, lower(), tokens(), guess_kind(), fit() */
 
@@ -433,8 +436,34 @@ draw_big (Cr const& cr, Gtk::Widget& w, double x, double y, PluginBrowser::Entry
 		screw (cr, x + W - 9.5, y + H - 9.5);
 	}
 
-	string maker = Gtkmm2ext::markup_escape_text (e.maker.empty () ? string (_("Plugin")) : e.maker);
+	string maker = Gtkmm2ext::markup_escape_text (!e.chain.empty () ? string (_("My chain")) : e.maker.empty () ? string (_("Plugin")) : e.maker);
 	text_at (cr, w, "<span letter_spacing=\"1400\">" + string (g_utf8_strup (maker.c_str (), -1)) + "</span>", 9, true, e.ink, 0.8, x + 30, y + 8, W - 60, true);
+
+	if (!e.chain.empty ()) {
+		/* a chain: its plugins side by side, in order */
+		const size_t n = std::min<size_t> (e.parts.size (), 6);
+		if (n) {
+			const double gap = 6, mw = (260 - gap * (n - 1)) / n;
+			for (size_t i = 0; i < n; ++i) {
+				PluginBrowser::Entry::Part const& pt = e.parts[i];
+				const double px_ = x + 22 + i * (mw + gap);
+				Cairo::RefPtr<Cairo::LinearGradient> g = Cairo::LinearGradient::create (0, y + 28, 0, y + 82);
+				g->add_color_stop_rgb (0, ((pt.light >> 16) & 0xff) / 255.0, ((pt.light >> 8) & 0xff) / 255.0, (pt.light & 0xff) / 255.0);
+				g->add_color_stop_rgb (1, ((pt.dark >> 16) & 0xff) / 255.0, ((pt.dark >> 8) & 0xff) / 255.0, (pt.dark & 0xff) / 255.0);
+				rounded (cr, px_, y + 28, mw, 54, 3);
+				cr->set_source (g);
+				cr->fill ();
+				rgb (cr, 0xffffff, 0.2);
+				cr->rectangle (px_ + 2, y + 28.5, mw - 4, 1);
+				cr->fill ();
+				text_at (cr, w, Gtkmm2ext::markup_escape_text (pt.name), 9.5, true, pt.ink, 1.0, px_ + 3, y + 48, mw - 6, true);
+			}
+		}
+		string name = Gtkmm2ext::markup_escape_text (e.name);
+		text_at (cr, w, name, 14, true, 0x000000, 0.5, x + 30, y + H - 28.5, W - 60, true);
+		text_at (cr, w, name, 14, true, e.ink, 1.0, x + 30, y + H - 27, W - 60, true);
+		return;
+	}
 
 	/* the screen */
 	rgb (cr, 0x090b0d);
@@ -452,7 +481,7 @@ draw_big (Cr const& cr, Gtk::Widget& w, double x, double y, PluginBrowser::Entry
 	/* knobs */
 	static const double cx[] = { 167, 216, 265 };
 	for (int i = 0; i < 3; ++i) {
-		knob (cr, x + cx[i], y + 57, 15, (int) ((e.seed >> (i * 3)) % 260) - 130);
+		knob (cr, x + cx[i], y + 57, 15, std::isnan (e.knob[i]) ? (double) ((int) ((e.seed >> (i * 3)) % 260) - 130) : e.knob[i]);
 	}
 
 	/* the name, engraved */
@@ -613,6 +642,8 @@ protected:
 		}
 		if (ev->x / s () > W - 44) {
 			_b.toggle_star (_b._rows[r].entry);
+		} else if (ev->state & GDK_SHIFT_MASK) {
+			_b.pin_entry (_b._rows[r].entry);
 		} else {
 			_b.add_entry (_b._rows[r].entry);
 		}
@@ -767,9 +798,9 @@ public:
 	/** one step up (-1) or down (+1) the list: the wheel, or a click on a neighbour */
 	sigc::signal<void, int> Step;
 
-	PluginPlate () : _target (0), _pos (0), _vel (0), _compact (false)
+	PluginPlate () : _target (0), _pos (0), _vel (0), _compact (false), _pinned (0), _knob (-1), _knob_y (0), _knob_a (0)
 	{
-		add_events (Gdk::BUTTON_PRESS_MASK | Gdk::SCROLL_MASK);
+		add_events (Gdk::BUTTON_PRESS_MASK | Gdk::BUTTON_RELEASE_MASK | Gdk::BUTTON1_MOTION_MASK | Gdk::SCROLL_MASK);
 		apply_size ();
 	}
 
@@ -789,6 +820,15 @@ public:
 		} else if (!_timer.connected ()) {
 			_last   = g_get_monotonic_time ();
 			_timer  = Glib::signal_timeout ().connect (sigc::mem_fun (*this, &PluginPlate::tick), 16);
+		}
+	}
+
+	/** a plugin held up for comparing: it takes the slot above the middle one (A) */
+	void set_pinned (PluginBrowser::Entry const* e)
+	{
+		if (e != _pinned) {
+			_pinned = e;
+			queue_draw ();
 		}
 	}
 
@@ -846,15 +886,66 @@ protected:
 		return true;
 	}
 
+	static double knob_default (PluginBrowser::Entry const& e, int i)
+	{
+		return (double) ((int) ((e.seed >> (i * 3)) % 260) - 130);
+	}
+
+	/* which knob of the middle unit is at (x, y), or -1 */
+	int knob_at (double x, double y, double W, double H) const
+	{
+		if (_target < 0 || _target >= (int) _list.size () || fabs (_pos - _target) > 0.05 || !_list[_target]->chain.empty ()) {
+			return -1;
+		}
+		static const double cx[] = { 167, 216, 265 };
+		const double ox = (W - 304) / 2, oy = centre_y (H) + 57;
+		for (int i = 0; i < 3; ++i) {
+			if ((x - ox - cx[i]) * (x - ox - cx[i]) + (y - oy) * (y - oy) <= 18 * 18) {
+				return i;
+			}
+		}
+		return -1;
+	}
+
+	bool on_motion_notify_event (GdkEventMotion* ev)
+	{
+		if (_knob < 0 || _target < 0 || _target >= (int) _list.size ()) {
+			return false;
+		}
+		const float s = UIConfiguration::instance ().get_ui_scale ();
+		_list[_target]->knob[_knob] = std::max (-135.0, std::min (135.0, _knob_a + (_knob_y - ev->y / s) * 2.2));
+		queue_draw ();
+		return true;
+	}
+
+	bool on_button_release_event (GdkEventButton*)
+	{
+		_knob = -1;
+		return false;
+	}
+
 	bool on_button_press_event (GdkEventButton* ev)
 	{
-		if (ev->button != 1 || _compact) {
+		if (ev->button != 1) {
 			return false;
 		}
 		const float  s = UIConfiguration::instance ().get_ui_scale ();
 		const double H = get_allocation ().get_height () / s;
 		const double y = ev->y / s;
 		const double top = centre_y (H);
+		{
+			const int k = knob_at (ev->x / s, y, get_allocation ().get_width () / s, H);
+			if (k >= 0) {
+				PluginBrowser::Entry const& e = *_list[_target];
+				_knob   = k;
+				_knob_y = y;
+				_knob_a = std::isnan (e.knob[k]) ? knob_default (e, k) : e.knob[k];
+				return true;
+			}
+		}
+		if (_compact) {
+			return false;
+		}
 		if (y < top - 2) {
 			Step (-1);
 		} else if (y > top + PH + 2) {
@@ -877,6 +968,20 @@ protected:
 			cr->fill ();
 		}
 		ears (cr, W, y);
+	}
+
+	/* a round letter badge: which of the two being compared this is */
+	void tag (Cr const& cr, double W, double y, const char* letter)
+	{
+		rgb (cr, 0x000000, 0.5);
+		cr->begin_new_sub_path ();
+		cr->arc (W / 2 - 128 + 0.5, y + 17, 9, 0, 2 * M_PI);
+		cr->fill ();
+		rgb (cr, 0xf4f4f4);
+		cr->begin_new_sub_path ();
+		cr->arc (W / 2 - 128, y + 16, 9, 0, 2 * M_PI);
+		cr->fill ();
+		text_at (cr, *this, letter, 11, true, 0x111111, 1.0, W / 2 - 137, y + 8, 18, true);
 	}
 
 	void ears (Cr const& cr, double W, double y)
@@ -940,6 +1045,9 @@ protected:
 				if (y > H || y + PH < 0) {
 					continue;
 				}
+				if (_pinned && i == _target - 1) {
+					continue; /* its slot is taken by the pinned unit */
+				}
 				if (i < 0 || i >= n) {
 					blank (cr, W, y);
 				} else {
@@ -947,6 +1055,9 @@ protected:
 					panel (cr, 0, y, W, PH, 0, e, true);
 					ears (cr, W, y);
 					draw_big (cr, *this, (W - 304) / 2, y, e, kind_table[e.kind], false);
+					if (_pinned && i == _target && &e != _pinned) {
+						tag (cr, W, y, "B");
+					}
 				}
 				/* neighbours are dimmer */
 				const double a = fabs (d);
@@ -955,6 +1066,19 @@ protected:
 				cr->rectangle (0, y, W, PH);
 				cr->fill ();
 			}
+		}
+
+		if (_pinned && !_compact) {
+			const double d = (_target - 1) - _pos;
+			const double y = top + d * PITCH;
+			panel (cr, 0, y, W, PH, 0, *_pinned, true);
+			ears (cr, W, y);
+			draw_big (cr, *this, (W - 304) / 2, y, *_pinned, kind_table[_pinned->kind], false);
+			tag (cr, W, y, "A");
+			const double a = fabs (d);
+			rgb (cr, 0x000000, a < 1 ? 0.38 * a : 0.38);
+			cr->rectangle (0, y, W, PH);
+			cr->fill ();
 		}
 
 		/* soft edges, as if the rack went on above and below */
@@ -977,6 +1101,9 @@ private:
 	int            _target;
 	double         _pos, _vel;
 	bool           _compact;
+	PluginBrowser::Entry const* _pinned;
+	int            _knob;
+	double         _knob_y, _knob_a;
 	gint64         _last = 0;
 	gint64         _wheel_at = 0;
 	sigc::connection _timer;
@@ -1306,6 +1433,10 @@ PluginBrowser::PluginBrowser ()
 	, _list (0)
 	, _scroll (0)
 	, _plate (0)
+	, _pin (-1)
+	, _hear_entry (-1)
+	, _hear_rolled (false)
+	, _hear_pos (0)
 	, _rack (0)
 	, _right (0)
 	, _picker (0)
@@ -1417,6 +1548,9 @@ PluginBrowser::PluginBrowser ()
 	_tile_new.set_name ("tab button");
 	_tile_fav.set_text (string ("\xE2\x98\x85 ") + _("Favourites"));
 	_tile_new.set_text (_("New"));
+	_tile_chain.set_name ("tab button");
+	_tile_chain.set_text (_("My chains"));
+	_tile_chain.signal_clicked.connect ([this] () { set_filter (-4); });
 	_tile_all.signal_clicked.connect ([this] () { set_filter (-1); });
 	_tile_fav.signal_clicked.connect ([this] () { set_filter (-2); });
 	_tile_new.signal_clicked.connect ([this] () { set_filter (-3); });
@@ -1427,6 +1561,7 @@ PluginBrowser::PluginBrowser ()
 	hover (_tile_all, -1);
 	hover (_tile_fav, -2);
 	hover (_tile_new, -3);
+	hover (_tile_chain, -4);
 	for (int i = 0; i < NKinds; ++i) {
 		ArdourWidgets::ArdourButton* b = new ArdourWidgets::ArdourButton;
 		b->set_name ("tab button");
@@ -1435,7 +1570,7 @@ PluginBrowser::PluginBrowser ()
 		hover (*b, i);
 		_tile_kind.push_back (b);
 	}
-	for (ArdourWidgets::ArdourButton* b : { &_tile_all, &_tile_fav, &_tile_new }) {
+	for (ArdourWidgets::ArdourButton* b : { &_tile_all, &_tile_fav, &_tile_new, &_tile_chain }) {
 		b->set_size_request (-1, px (44));
 	}
 	for (ArdourWidgets::ArdourButton* b : _tile_kind) {
@@ -1524,7 +1659,41 @@ PluginBrowser::PluginBrowser ()
 	fmt_c->add (_format);
 	info->pack_start (_name, false, false);
 	info->pack_start (_kind_maker, false, false);
-	info->pack_start (*fmt_c, false, false);
+	/* hear it (or A and B), next to the format */
+	_hear.set_name ("generic button");
+	_hear_a.set_name ("generic button");
+	_hear_b.set_name ("generic button");
+	_compare_stop.set_name ("generic button");
+	_compare_stop.set_text (_("stop"));
+	for (ArdourWidgets::ArdourButton* b : { &_hear, &_hear_a, &_hear_b }) {
+		b->set_corner_radius (px (13));
+		b->set_size_request (-1, px (26));
+	}
+	_compare_stop.set_corner_radius (px (10));
+	_compare_stop.set_size_request (-1, px (22));
+	_hear.signal_clicked.connect ([this] () { if (_sel >= 0 && !_rows[_sel].header) { hear (_rows[_sel].entry); } });
+	_hear_a.signal_clicked.connect ([this] () { if (_pin >= 0) { hear (_pin); } });
+	_hear_b.signal_clicked.connect ([this] () { if (_sel >= 0 && !_rows[_sel].header) { hear (_rows[_sel].entry); } });
+	_compare_stop.signal_clicked.connect (sigc::mem_fun (*this, &PluginBrowser::unpin));
+	grey (_compare_label, "#9aa1ac");
+	_compare_row.set_spacing (px (6));
+	{
+		Gtk::Alignment* a = manage (new Gtk::Alignment (0.5, 0.5, 0, 0));
+		Gtk::HBox*      b = manage (new Gtk::HBox (false, px (6)));
+		b->pack_start (_compare_label, false, false);
+		b->pack_start (_compare_stop, false, false);
+		a->add (*b);
+		_compare_row.pack_start (*a, true, true);
+	}
+	Gtk::HBox* hear_row = manage (new Gtk::HBox (false, px (8)));
+	hear_row->pack_start (_hear, false, false);
+	hear_row->pack_start (_hear_a, false, false);
+	hear_row->pack_start (_hear_b, false, false);
+	hear_row->pack_start (*fmt_c, false, false);
+	Gtk::Alignment* hear_c = manage (new Gtk::Alignment (0.5, 0.5, 0, 0));
+	hear_c->add (*hear_row);
+	info->pack_start (*hear_c, false, false);
+	info->pack_start (_compare_row, false, false);
 	info->pack_start (_desc, false, false);
 	info->pack_start (*sep, false, false, px (4));
 	info->pack_start (_facts, false, false);
@@ -1569,6 +1738,38 @@ PluginBrowser::PluginBrowser ()
 	rack_box->pack_start (_rack_title, false, false);
 	rack_box->pack_start (*_rack, false, false);
 	rack_box->pack_start (_rack_msg, false, false);
+	{
+		_save_chain.set_name ("generic button");
+		_save_chain.set_text (_("Save these as a chain"));
+		_save_chain.set_corner_radius (px (14));
+		_save_chain.set_size_request (-1, px (28));
+		_save_chain.signal_clicked.connect (sigc::mem_fun (*this, &PluginBrowser::begin_save_chain));
+		Gtk::Alignment* sc = manage (new Gtk::Alignment (0.5, 0.5, 0, 0));
+		sc->add (_save_chain);
+		rack_box->pack_start (*sc, false, false);
+
+		_chain_name.set_width_chars (28);
+		_chain_name.set_alignment (0.5);
+		_chain_name.signal_activate ().connect (sigc::mem_fun (*this, &PluginBrowser::save_chain));
+		ArdourWidgets::ArdourButton* ok = manage (new ArdourWidgets::ArdourButton (_("Save")));
+		ArdourWidgets::ArdourButton* no = manage (new ArdourWidgets::ArdourButton (_("Cancel")));
+		for (ArdourWidgets::ArdourButton* b : { ok, no }) {
+			b->set_name ("generic button");
+			b->set_corner_radius (px (14));
+			b->set_size_request (px (80), px (28));
+		}
+		ok->signal_clicked.connect (sigc::mem_fun (*this, &PluginBrowser::save_chain));
+		no->signal_clicked.connect ([this] () { _chain_row.hide (); update_save_ui (); });
+		_chain_row.set_spacing (px (8));
+		Gtk::Alignment* cr_ = manage (new Gtk::Alignment (0.5, 0.5, 0, 0));
+		Gtk::HBox*      cb  = manage (new Gtk::HBox (false, px (8)));
+		cb->pack_start (_chain_name, false, false);
+		cb->pack_start (*ok, false, false);
+		cb->pack_start (*no, false, false);
+		cr_->add (*cb);
+		_chain_row.pack_start (*cr_, true, true);
+		rack_box->pack_start (_chain_row, false, false);
+	}
 	Gtk::EventBox* rack_eb = manage (new Gtk::EventBox);
 	rack_eb->add (*rack_box);
 	bg (*rack_eb, "#1a1d22");
@@ -1593,6 +1794,15 @@ PluginBrowser::PluginBrowser ()
 
 	_notes_link.show_all ();
 	_note_edit.hide ();
+	_chain_row.hide ();
+	_save_chain.set_no_show_all ();
+	_hear.set_no_show_all ();
+	_hear_a.set_no_show_all ();
+	_hear_b.set_no_show_all ();
+	_compare_row.hide ();
+	_hear_a.hide ();
+	_hear_b.hide ();
+	_save_chain.hide ();
 
 	{
 		Gdk::Rectangle r;
@@ -1630,9 +1840,21 @@ PluginBrowser::load_meta ()
 	if (!tree.read (path)) {
 		return;
 	}
+	_chains.clear ();
 	for (XMLNode* n : tree.root ()->children ()) {
 		string name, note;
 		int64_t seen = 0;
+		if (n->name () == "Chain") {
+			if (n->get_property ("name", name)) {
+				std::vector<string> parts;
+				for (XMLNode* c : n->children ()) {
+					string pn;
+					if (c->get_property ("name", pn)) { parts.push_back (pn); }
+				}
+				if (!parts.empty ()) { _chains.push_back (std::make_pair (name, parts)); }
+			}
+			continue;
+		}
 		if (n->get_property ("name", name)) {
 			n->get_property ("note", note);
 			n->get_property ("first-seen", seen);
@@ -1653,6 +1875,13 @@ PluginBrowser::save_meta () const
 			n->set_property ("note", m.second.first);
 		}
 		n->set_property ("first-seen", m.second.second);
+	}
+	for (auto const& c : _chains) {
+		XMLNode* n = root->add_child ("Chain");
+		n->set_property ("name", c.first);
+		for (string const& part : c.second) {
+			n->add_child ("Part")->set_property ("name", part);
+		}
 	}
 	XMLTree tree;
 	tree.set_root (root);
@@ -1766,7 +1995,50 @@ PluginBrowser::load_entries ()
 		save_meta ();
 	}
 	refresh_stats ();
+	add_chain_entries ();
 	_loaded = true;
+}
+
+/* each saved chain is an entry of its own, at the end of the list */
+void
+PluginBrowser::add_chain_entries ()
+{
+	_entries.erase (std::remove_if (_entries.begin (), _entries.end (), [] (Entry const& e) { return !e.chain.empty (); }), _entries.end ());
+	for (auto const& c : _chains) {
+		Entry e;
+		e.name       = c.first;
+		e.lname      = lower (c.first);
+		e.maker      = _("you");
+		e.lmaker     = lower (e.maker);
+		e.tags       = "chain";
+		e.kind       = ChainKind;
+		e.instrument = false;
+		e.favourite  = false;
+		e.go_to      = false;
+		e.last_used  = 0;
+		e.uses       = 0;
+		e.first_seen = 0;
+		e.variant    = 0;
+		e.score      = 0;
+		e.light      = 0x7a6528;
+		e.dark       = 0x3f3414;
+		e.ink        = 0xfff0c0;
+		e.seed       = hash_of (c.first);
+		string flow;
+		for (string const& pn : c.second) {
+			e.chain.push_back (lower (pn));
+			for (Entry const& x : _entries) {
+				if (x.chain.empty () && x.lname == lower (pn) && !x.instrument) {
+					Entry::Part pt = { x.name, x.light, x.dark, x.ink };
+					e.parts.push_back (pt);
+					flow += (flow.empty () ? "" : " \xE2\x86\x92 ") + x.name;
+					break;
+				}
+			}
+		}
+		e.builtin = flow;
+		_entries.push_back (e);
+	}
 }
 
 void
@@ -1857,14 +2129,19 @@ PluginBrowser::rebuild ()
 		e.hits.clear ();
 	}
 
-	vector<int> mine, other;
+	vector<int> mine, other, chains;
 	for (size_t i = 0; i < _entries.size (); ++i) {
+		if (!_entries[i].chain.empty ()) {
+			if (!_instruments) { chains.push_back ((int) i); }
+			continue;
+		}
 		(_entries[i].instrument == _instruments ? mine : other).push_back ((int) i);
 	}
 	auto in_filter = [this] (Entry const& e) {
 		if (_filter == -1) { return true; }
 		if (_filter == -2) { return e.favourite; }
 		if (_filter == -3) { return e.is_new (); }
+		if (_filter == -4) { return !e.chain.empty (); }
 		return e.kind == _filter;
 	};
 	auto az = [this] (int a, int b) { return _entries[a].lname < _entries[b].lname; };
@@ -1912,6 +2189,7 @@ PluginBrowser::rebuild ()
 			std::sort (fresh.begin (), fresh.end (), az);
 			std::sort (favs.begin (), favs.end (), az);
 			section (_("RECENT"), "", recent);
+			section (_("MY CHAINS"), _("one click adds them all"), chains);
 			section (_("NEW IN MY COLLECTION"), _("not tried yet"), fresh);
 			section (_("FAVOURITES"), "", favs);
 			vector<int> everything = mine;
@@ -1922,6 +2200,8 @@ PluginBrowser::rebuild ()
 			for (int i : mine) { if (_entries[i].favourite) { v.push_back (i); } }
 			std::sort (v.begin (), v.end (), az);
 			section (_("FAVOURITES"), _("click a star to add or remove one"), v);
+		} else if (_filter == -4) {
+			section (_("MY CHAINS"), _("one click adds every plugin in the chain"), chains);
 		} else if (_filter == -3) {
 			vector<int> v;
 			for (int i : mine) { if (_entries[i].is_new ()) { v.push_back (i); } }
@@ -1942,11 +2222,14 @@ PluginBrowser::rebuild ()
 		}
 	} else {
 		vector<int> inside, outside;
-		for (int i : mine) { (in_filter (_entries[i]) ? inside : outside).push_back (i); }
+		vector<int> searchable = mine;
+		searchable.insert (searchable.end (), chains.begin (), chains.end ());
+		for (int i : searchable) { (in_filter (_entries[i]) ? inside : outside).push_back (i); }
 		string where;
 		if (_filter >= 0) { where = string_compose (_("in %1"), _(kind_table[_filter].label)); }
 		else if (_filter == -2) { where = _("in Favourites"); }
 		else if (_filter == -3) { where = _("in New"); }
+		else if (_filter == -4) { where = _("in My chains"); }
 		section (_("BEST MATCHES"), where, search (_entries, inside, words));
 		if (_filter != -1) {
 			section (_("ALSO IN OTHER KINDS"), "", search (_entries, outside, words));
@@ -1992,6 +2275,7 @@ PluginBrowser::tile_tip (int filter) const
 	if (filter == -1) { return _("Your whole collection, with the ones you used lately and your favourites at the top."); }
 	if (filter == -2) { return _("The ones you starred. Click the star on any row to add it here."); }
 	if (filter == -3) { return _("Installed lately and not tried yet."); }
+	if (filter == -4) { return _("Sets of plugins you saved. One click adds them all, in order."); }
 	return string_compose ("%1: %2", _(kind_table[filter].label), _(kind_table[filter].tip));
 }
 
@@ -2026,6 +2310,10 @@ PluginBrowser::update_tiles ()
 	if (_filter == -3 && n_new == 0) {
 		_filter = -1;
 	}
+	const bool have_chains = !_instruments && !_chains.empty ();
+	if (_filter == -4 && !have_chains) {
+		_filter = -1;
+	}
 	_tile_all.set_text (_instruments ? _("All my instruments") : _("All my effects"));
 	_tiles.attach (_tile_all, 0, 2, 0, 1);
 	if (n_new) {
@@ -2034,13 +2322,21 @@ PluginBrowser::update_tiles ()
 	} else {
 		_tiles.attach (_tile_fav, 0, 2, 1, 2);
 	}
+	int first = 2;
+	if (have_chains) {
+		_tiles.attach (_tile_chain, 0, 2, 2, 3);
+		first = 3;
+	}
 	int n = 0;
 	for (int i = 0; i < NKinds; ++i) {
 		if (kind_table[i].instrument != _instruments) { continue; }
-		_tiles.attach (*_tile_kind[i], n % 2, n % 2 + 1, 2 + n / 2, 3 + n / 2);
+		_tiles.attach (*_tile_kind[i], n % 2, n % 2 + 1, first + n / 2, first + 1 + n / 2);
 		++n;
 	}
-	_tiles.set_row_spacing (1, (guint) rintf (16 * UIConfiguration::instance ().get_ui_scale ()));
+	_tiles.set_row_spacing (1, have_chains ? 6 : (guint) rintf (16 * UIConfiguration::instance ().get_ui_scale ()));
+	if (have_chains) {
+		_tiles.set_row_spacing (2, (guint) rintf (16 * UIConfiguration::instance ().get_ui_scale ()));
+	}
 	_tiles.show_all ();
 	if (!n_new) { _tile_new.hide (); }
 
@@ -2048,6 +2344,7 @@ PluginBrowser::update_tiles ()
 	state (_tile_all, _filter == -1);
 	state (_tile_fav, _filter == -2);
 	state (_tile_new, _filter == -3);
+	state (_tile_chain, _filter == -4);
 	for (int i = 0; i < NKinds; ++i) {
 		state (*_tile_kind[i], _filter == i);
 	}
@@ -2133,6 +2430,7 @@ PluginBrowser::rack_changed ()
 	if (_rack) {
 		_rack->queue_draw ();
 	}
+	update_save_ui ();
 }
 
 /** the track's plugins as units, laid out centred in `W` (unscaled pixels) */
@@ -2566,6 +2864,9 @@ PluginBrowser::undo ()
 void
 PluginBrowser::set_target (std::shared_ptr<Route> r)
 {
+	if (r != _target.lock ()) {
+		stop_hear ();
+	}
 	_target = r;
 	_route_connection.disconnect ();
 	if (r) {
@@ -2753,6 +3054,7 @@ PluginBrowser::feed_rack ()
 		list.push_back (&_entries[_rows[i].entry]);
 	}
 	_plate->set_compact (_editing);
+	_plate->set_pinned (_pin >= 0 && _pin < (int) _entries.size () ? &_entries[_pin] : 0);
 	_plate->set_rack (list, at);
 }
 
@@ -2770,6 +3072,7 @@ PluginBrowser::show_selected ()
 		_format.hide ();
 		_facts.hide ();
 		_notes_link.hide ();
+		update_hear_buttons ();
 		return;
 	}
 	Entry const&    e = _entries[_rows[_sel].entry];
@@ -2778,8 +3081,16 @@ PluginBrowser::show_selected ()
 	_name.set_markup (string_compose ("<span size=\"x-large\" weight=\"bold\">%1</span>", Gtkmm2ext::markup_escape_text (e.name)));
 	_kind_maker.set_text (e.maker.empty () ? string (_(k.label)) : string_compose (_("%1 · by %2"), _(k.label), e.maker));
 	_desc.set_text ((e.note.empty () ? "" : "\xE2\x9C\x8E ") + e.description ());
-	_format.set_text (PluginManager::plugin_type_name (e.variants[e.variant]->type, true) + (e.variants.size () > 1 ? " \xE2\x96\xBE" : ""));
-	_format.show ();
+	if (e.variants.empty ()) {
+		_format.hide ();
+	} else {
+		_format.set_text (PluginManager::plugin_type_name (e.variants[e.variant]->type, true) + (e.variants.size () > 1 ? " \xE2\x96\xBE" : ""));
+		_format.show ();
+	}
+	if (_hear_entry >= 0 && _hear_entry != _rows[_sel].entry && _hear_entry != _pin) {
+		stop_hear ();
+	}
+	update_hear_buttons ();
 
 	if (e.go_to) {
 		_fact_goto.set_markup (string_compose ("<span foreground=\"#4c9aff\" weight=\"bold\">%1</span>", string_compose (_("Your go-to %1"), _(k.one))));
@@ -2846,6 +3157,9 @@ void
 PluginBrowser::toggle_star (int entry)
 {
 	Entry& e = _entries[entry];
+	if (!e.chain.empty ()) {
+		return;
+	}
 	PluginManager& pm = PluginManager::instance ();
 	const bool on = !e.favourite;
 	for (PluginInfoPtr const& v : e.variants) {
@@ -2878,26 +3192,25 @@ PluginBrowser::open_manager ()
 	}
 }
 
-void
-PluginBrowser::add_entry (int entry)
+/* put one plugin on the track; says what happened unless a chain is being added */
+bool
+PluginBrowser::add_one (int entry, bool announce)
 {
 	Session* s = ARDOUR_UI::instance ()->the_session ();
-	if (!s) {
-		return;
-	}
 	std::shared_ptr<Route> route = _target.lock ();
-	if (!route) {
-		rack_say (_("Choose a track first: click “Add to” at the top right."));
-		choose_target ();
-		return;
+	if (!s || !route || entry < 0 || entry >= (int) _entries.size ()) {
+		return false;
 	}
 	Entry&        e    = _entries[entry];
+	if (e.variants.empty ()) {
+		return false;
+	}
 	PluginInfoPtr info = e.variants[e.variant];
 
 	PluginPtr p = info->load (*s);
 	if (!p) {
 		rack_say (string_compose (_("%1 could not be loaded."), e.name));
-		return;
+		return false;
 	}
 	std::shared_ptr<Processor> processor (new PluginInsert (*s, *route, p));
 	Route::ProcessorStreams    err;
@@ -2915,14 +3228,12 @@ PluginBrowser::add_entry (int entry)
 	}
 	if (rv != 0) {
 		rack_say (string_compose (_("%1 could not be added: its inputs and outputs do not fit %2."), e.name, route->name ()));
-		return;
+		return false;
 	}
 
 	PluginManager::instance ().stats_use_plugin (info);
 	e.uses += 1;
 	e.last_used = time (0);
-	refresh_stats ();
-	show_selected ();
 	{
 		Undo u;
 		u.what   = Undo::Added;
@@ -2933,10 +3244,280 @@ PluginBrowser::add_entry (int entry)
 		u.active = true;
 		_undo.push_back (u);
 	}
+	if (announce) {
+		rack_say (string_compose (_("%1 is on %2. Click another to add more. Ctrl+Z takes it off again."), e.name, route->name ()));
+	}
+	return true;
+}
+
+void
+PluginBrowser::add_entry (int entry)
+{
+	if (!ARDOUR_UI::instance ()->the_session ()) {
+		return;
+	}
+	std::shared_ptr<Route> route = _target.lock ();
+	if (!route) {
+		rack_say (_("Choose a track first: click “Add to” at the top right."));
+		choose_target ();
+		return;
+	}
+	if (entry < 0 || entry >= (int) _entries.size ()) {
+		return;
+	}
+	stop_hear ();
+	Entry const& e = _entries[entry];
+	if (!e.chain.empty ()) {
+		/* a chain: each of its plugins, in order */
+		const string name = e.name;
+		const vector<string> parts = e.chain;
+		int added = 0;
+		for (string const& pn : parts) {
+			for (size_t i = 0; i < _entries.size (); ++i) {
+				if (_entries[i].chain.empty () && _entries[i].lname == pn && !_entries[i].instrument) {
+					if (add_one ((int) i, false)) { ++added; }
+					break;
+				}
+			}
+		}
+		refresh_stats ();
+		show_selected ();
+		_rack_sel.reset ();
+		rack_say (added == (int) parts.size ()
+		          ? string_compose (_("The %1 plugins of “%2” are on %3. Ctrl+Z takes them off one at a time."), added, name, route->name ())
+		          : string_compose (_("%1 of the %2 plugins of “%3” are on %4. The others are not installed or do not fit."), added, parts.size (), name, route->name ()));
+		rack_changed ();
+		_list->queue_draw ();
+		return;
+	}
+	if (!add_one (entry, true)) {
+		return;
+	}
+	refresh_stats ();
+	show_selected ();
 	_rack_sel.reset ();
-	rack_say (string_compose (_("%1 is on %2. Click another to add more. Ctrl+Z takes it off again."), e.name, route->name ()));
 	rack_changed ();
 	_list->queue_draw ();
+}
+
+/* ---- compare ------------------------------------------------------------- */
+
+void
+PluginBrowser::pin_entry (int entry)
+{
+	if (entry < 0 || entry >= (int) _entries.size () || !_entries[entry].chain.empty ()) {
+		return;
+	}
+	_pin = (_pin == entry) ? -1 : entry;
+	stop_hear ();
+	feed_rack ();
+	show_selected ();
+}
+
+void
+PluginBrowser::unpin ()
+{
+	if (_pin < 0) {
+		return;
+	}
+	_pin = -1;
+	stop_hear ();
+	feed_rack ();
+	show_selected ();
+}
+
+/* ---- hear it: on the track for a few seconds, then gone ------------------- */
+
+void
+PluginBrowser::hear (int entry)
+{
+	if (_hear_entry == entry) {
+		stop_hear ();
+		return;
+	}
+	stop_hear ();
+	Session* s = ARDOUR_UI::instance ()->the_session ();
+	std::shared_ptr<Route> route = _target.lock ();
+	if (!route) {
+		rack_say (_("Choose a track first: click “Add to” at the top right."));
+		choose_target ();
+		return;
+	}
+	if (!s || entry < 0 || entry >= (int) _entries.size ()) {
+		return;
+	}
+	Entry const& e = _entries[entry];
+	if (e.variants.empty () || e.instrument) {
+		return;
+	}
+	PluginPtr p = e.variants[e.variant]->load (*s);
+	if (!p) {
+		rack_say (string_compose (_("%1 could not be loaded."), e.name));
+		return;
+	}
+	std::shared_ptr<Processor> processor (new PluginInsert (*s, *route, p));
+	Route::ProcessorStreams    err;
+	if (route->add_processor (processor, PreFader, &err, true) != 0) {
+		rack_say (string_compose (_("%1 does not fit %2, so it cannot be heard there."), e.name, route->name ()));
+		return;
+	}
+	_hear_entry = entry;
+	_hear_route = route;
+	_hear_proc  = processor;
+	_hear_rolled = false;
+	if (!s->transport_rolling ()) {
+		_hear_pos    = s->transport_sample ();
+		_hear_rolled = true;
+		s->request_transport_speed (1.0);
+	}
+	_hear_timer = Glib::signal_timeout ().connect ([this] () { stop_hear (); return false; }, 4000);
+	set_foot (string_compose (_("Hearing %1 on %2 for a few seconds. Nothing has been added."), e.name, route->name ()));
+	update_hear_buttons ();
+	rack_changed ();
+}
+
+void
+PluginBrowser::stop_hear ()
+{
+	if (_hear_entry < 0) {
+		return;
+	}
+	_hear_timer.disconnect ();
+	_hear_entry = -1;
+	std::shared_ptr<Route>     r = _hear_route.lock ();
+	std::shared_ptr<Processor> p = _hear_proc.lock ();
+	if (r && p) {
+		r->remove_processor (p);
+	}
+	_hear_route.reset ();
+	_hear_proc.reset ();
+	if (_hear_rolled) {
+		_hear_rolled = false;
+		if (Session* s = ARDOUR_UI::instance ()->the_session ()) {
+			s->request_stop ();
+			s->request_locate (_hear_pos);
+		}
+	}
+	set_foot ("");
+	update_hear_buttons ();
+	rack_changed ();
+}
+
+void
+PluginBrowser::update_hear_buttons ()
+{
+	const bool ok = _sel >= 0 && _sel < (int) _rows.size () && !_rows[_sel].header;
+	bool able = false;
+	int  sel_entry = -1;
+	if (ok) {
+		sel_entry = _rows[_sel].entry;
+		Entry const& e = _entries[sel_entry];
+		able = e.chain.empty () && !e.instrument && !e.variants.empty ();
+	}
+	const bool comparing = _pin >= 0;
+	auto label = [this] (ArdourWidgets::ArdourButton& b, int entry, const char* name) {
+		b.set_text (string_compose ("%1 %2", _hear_entry == entry ? "\xE2\x96\xA0" : "\xE2\x96\xB6", name));
+		b.set_active_state (_hear_entry == entry ? Gtkmm2ext::ExplicitActive : Gtkmm2ext::Off);
+	};
+	if (able && !comparing) {
+		label (_hear, sel_entry, _("Hear it"));
+		_hear.show ();
+	} else {
+		_hear.hide ();
+	}
+	if (able && comparing) {
+		label (_hear_a, _pin, "A");
+		label (_hear_b, sel_entry, "B");
+		_hear_a.show ();
+		_hear_b.show ();
+	} else {
+		_hear_a.hide ();
+		_hear_b.hide ();
+	}
+	if (comparing) {
+		_compare_label.set_markup (string_compose (_("Comparing with A: <b>%1</b>"), Gtkmm2ext::markup_escape_text (_entries[_pin].name)));
+		_compare_row.show_all ();
+	} else {
+		_compare_row.hide ();
+	}
+}
+
+/* ---- chains ---------------------------------------------------------------- */
+
+/* the names of the plugins on the track, in order */
+static vector<string>
+track_plugin_names (std::shared_ptr<Route> r)
+{
+	vector<string> names;
+	if (r) {
+		r->foreach_processor ([&names] (std::weak_ptr<Processor> wp) {
+			std::shared_ptr<PluginInsert> pi = std::dynamic_pointer_cast<PluginInsert> (wp.lock ());
+			if (pi && pi->display_to_user ()) {
+				names.push_back (PBD::sanitize_utf8 (pi->name ()));
+			}
+		});
+	}
+	return names;
+}
+
+void
+PluginBrowser::update_save_ui ()
+{
+	if (track_plugin_names (_target.lock ()).size () >= 2 && !_chain_row.is_visible ()) {
+		_save_chain.show ();
+	} else {
+		_save_chain.hide ();
+	}
+}
+
+void
+PluginBrowser::begin_save_chain ()
+{
+	_save_chain.hide ();
+	_chain_name.set_text ("");
+	_chain_row.show_all ();
+	_chain_name.grab_focus ();
+}
+
+void
+PluginBrowser::save_chain ()
+{
+	string name = _chain_name.get_text ();
+	while (!name.empty () && g_ascii_isspace (name[name.size () - 1])) { name.erase (name.size () - 1); }
+	while (!name.empty () && g_ascii_isspace (name[0])) { name.erase (0, 1); }
+	if (name.empty ()) {
+		name = _("My chain");
+	}
+	vector<string> parts;
+	stop_hear ();
+	for (string const& un : track_plugin_names (_target.lock ())) {
+		for (Entry const& e : _entries) {
+			if (e.chain.empty () && !e.instrument && (e.lname == lower (un))) {
+				parts.push_back (e.name);
+				break;
+			}
+		}
+	}
+	_chain_row.hide ();
+	if (parts.size () < 2) {
+		rack_say (_("A chain needs at least two plugins that are in your collection."));
+		update_save_ui ();
+		return;
+	}
+	for (size_t i = 0; i < _chains.size (); ++i) {
+		if (lower (_chains[i].first) == lower (name)) {
+			_chains.erase (_chains.begin () + i);
+			break;
+		}
+	}
+	_chains.push_back (std::make_pair (name, parts));
+	save_meta ();
+	_pin = -1;
+	add_chain_entries ();
+	update_tiles ();
+	rebuild ();
+	rack_say (string_compose (_("Saved “%1”. Find it under My chains: one click adds all %2."), name, parts.size ()));
+	update_save_ui ();
 }
 
 /* ---- the window ---------------------------------------------------------- */
@@ -2955,6 +3536,9 @@ PluginBrowser::on_show ()
 	_rack_sel.reset ();
 	_rack_note.clear ();
 	_note_edit.hide ();
+	_pin = -1;
+	_hear_entry = -1;
+	_chain_row.hide ();
 
 	std::shared_ptr<Route> r = _target.lock ();
 	_route_connection.disconnect ();
@@ -2978,6 +3562,7 @@ PluginBrowser::on_show ()
 void
 PluginBrowser::on_hide ()
 {
+	stop_hear ();
 	close_picker ();
 	_undo.clear ();
 	_session_connection.disconnect ();
@@ -3021,6 +3606,10 @@ PluginBrowser::on_key_press_event (GdkEventKey* ev)
 			close_picker ();
 		} else if (_editing) {
 			end_edit (false);
+		} else if (_hear_entry >= 0) {
+			stop_hear ();
+		} else if (_pin >= 0) {
+			unpin ();
 		} else {
 			hide ();
 		}
