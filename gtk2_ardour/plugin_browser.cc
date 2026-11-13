@@ -22,6 +22,8 @@
 #include <ctime>
 #include <set>
 
+#include <sys/wait.h>
+#include <unistd.h>
 #include <pango/pangocairo.h>
 #include <glibmm/fileutils.h>
 #include <glibmm/markup.h>
@@ -32,6 +34,8 @@
 #include <ytkmm/scrolledwindow.h>
 
 #include "pbd/xml++.h"
+#include "pbd/search_path.h"
+#include "pbd/file_utils.h"
 
 #include "ardour/audioengine.h"
 #include "ardour/filesystem_paths.h"
@@ -1587,7 +1591,12 @@ PluginBrowser::PluginBrowser ()
 	Gtk::VBox* left = manage (new Gtk::VBox (false, px (8)));
 	left->set_border_width (px (14));
 	left->pack_start (_tiles, false, false);
+	_get_free.set_name ("generic button");
+	_get_free.set_text (_("Get free plugins"));
+	_get_free.set_size_request (-1, px (34));
+	_get_free.signal_clicked.connect (sigc::mem_fun (*this, &PluginBrowser::get_free_plugins));
 	left->pack_end (_manage, false, false);
+	left->pack_end (_get_free, false, false);
 	Gtk::EventBox* left_box = manage (new Gtk::EventBox);
 	left_box->add (*left);
 	left_box->set_size_request (px (350), -1);
@@ -3183,6 +3192,93 @@ PluginBrowser::cycle_format ()
 	}
 }
 
+/* the plugins this version recommends, by what their names contain: when one
+ * is missing, the "Get free plugins" button is shown */
+static const char* const recommended[] = { "surge xt", "dragonfly", "lsp ", "calf", "x42" };
+
+void
+PluginBrowser::update_free_button ()
+{
+	vector<string> missing;
+	for (const char* want : recommended) {
+		bool found = false;
+		for (Entry const& e : _entries) {
+			found = found || e.lname.find (want) != string::npos;
+		}
+		if (!found) {
+			missing.push_back (string (want) == "lsp " ? "LSP" : want);
+		}
+	}
+	if (missing.empty ()) {
+		_get_free.hide ();
+		return;
+	}
+	_get_free.show ();
+}
+
+/* Install the recommended free plugins from the system's package list. The
+ * helper runs as root through pkexec (it asks for the password); we carry on
+ * meanwhile and say what happened when it is done. */
+void
+PluginBrowser::get_free_plugins ()
+{
+	if (_free_watch.connected ()) {
+		return;
+	}
+	string helper;
+	if (const char* e = g_getenv ("ARDOUR_FREE_PLUGINS_HELPER")) {
+		helper = e;
+	} else {
+		PBD::Searchpath sp (ARDOUR::ardour_dll_directory ());
+		PBD::find_file (sp, X_("ardour-install-free-plugins"), helper);
+	}
+	gchar* pk = g_find_program_in_path ("pkexec");
+	const string pkexec = pk ? pk : "";
+	g_free (pk);
+	if (helper.empty () || pkexec.empty ()) {
+		rack_say (_("This needs the package manager. In a terminal: sudo apt install surge-xt dragonfly-reverb-lv2 lsp-plugins-lv2 calf-plugins x42-plugins"));
+		return;
+	}
+	std::vector<string> argv = { pkexec, helper };
+	Glib::Pid pid;
+	int       out = -1;
+	try {
+		Glib::spawn_async_with_pipes ("", argv, Glib::SPAWN_DO_NOT_REAP_CHILD, sigc::slot<void> (), &pid, 0, &out, 0);
+	} catch (...) {
+		rack_say (_("The package manager could not be started."));
+		return;
+	}
+	_get_free.set_sensitive (false);
+	set_foot (_("Installing free plugins… you may be asked for your password. This can take a minute."));
+	_free_watch = Glib::signal_child_watch ().connect ([this, out, pid] (Glib::Pid, int status) {
+		string text;
+		char   buf[512];
+		ssize_t n;
+		while ((n = ::read (out, buf, sizeof (buf))) > 0) {
+			text.append (buf, n);
+		}
+		::close (out);
+		Glib::spawn_close_pid (pid);
+		_get_free.set_sensitive (true);
+		set_foot ("");
+		const int code = WIFEXITED (status) ? WEXITSTATUS (status) : -1;
+		if (code == 0) {
+			PluginManager::instance ().refresh ();
+			load_entries ();
+			update_tiles ();
+			rebuild ();
+			update_free_button ();
+			string note = text;
+			for (char& c : note) { if (c == '\n') { c = ' '; } }
+			rack_say (note.empty () ? string (_("The free plugins are installed and ready in the list.")) : note);
+		} else if (code == 126 || code == 127) {
+			rack_say (_("Nothing was installed: the password was not given."));
+		} else {
+			rack_say (text.empty () ? string (_("The plugins could not be installed.")) : text);
+		}
+	}, pid);
+}
+
 void
 PluginBrowser::open_manager ()
 {
@@ -3546,6 +3642,7 @@ PluginBrowser::on_show ()
 	set_target (r);
 	update_tiles ();
 	rebuild ();
+	update_free_button ();
 	rack_say ("");
 
 	Gtk::Window& mw = ARDOUR_UI::instance ()->main_window ();

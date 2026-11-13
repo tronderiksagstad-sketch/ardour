@@ -157,6 +157,8 @@ private:
 	ArdourWidgets::ArdourButton _tile_chain;
 	std::vector<ArdourWidgets::ArdourButton*> _tile_kind;
 	ArdourWidgets::ArdourButton _manage;
+	ArdourWidgets::ArdourButton _get_free;
+	sigc::connection       _free_watch;
 	PluginList*            _list;
 	Gtk::VScrollbar*       _scroll;
 	PluginPlate*           _plate;
@@ -303,6 +305,8 @@ private:
 	void rack_say (std::string const&);
 	void undo ();
 	void open_manager ();
+	void update_free_button ();
+	void get_free_plugins ();
 	void list_scrolled ();
 	std::string tile_tip (int filter) const;
 
