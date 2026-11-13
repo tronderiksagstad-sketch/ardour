@@ -325,6 +325,7 @@ SessionDialog::SessionDialog (DialogTab initial_tab, const std::string& session_
 	action_group->add (demo_session_action, sigc::mem_fun (*this, &SessionDialog::demo_button_choice_action));
 
 	set_position (WIN_POS_CENTER);
+	set_default_size (rintf (1040 * UIConfiguration::instance ().get_ui_scale ()), rintf (740 * UIConfiguration::instance ().get_ui_scale ()));
 	get_vbox()->set_spacing (6);
 	get_vbox()->pack_start (_open_table, true, true);
 
@@ -1056,7 +1057,7 @@ form_caption (std::string const& text)
 {
 	Gtk::Label* l = manage (new Gtk::Label);
 	l->set_markup (string_compose ("<span weight=\"bold\" alpha=\"80%%\">%1</span>", Gtkmm2ext::markup_escape_text (text)));
-	l->set_alignment (0.0, 0.5);
+	l->set_alignment (0.5, 0.5);
 	return l;
 }
 
@@ -1169,11 +1170,12 @@ SessionDialog::setup_new_session_page ()
 
 	Gtk::Label* heading = manage (new Gtk::Label);
 	heading->set_markup (string_compose ("<span size=\"x-large\" weight=\"bold\">%1</span>", _("New session")));
-	heading->set_alignment (0.0, 0.5);
+	heading->set_alignment (0.5, 0.5);
+	new_name_entry.set_alignment (0.5);
 
 	Gtk::VBox* column = manage (new Gtk::VBox);
 	column->set_spacing (12);
-	column->set_size_request (rintf (400 * scale), -1);
+	column->set_size_request (rintf (480 * scale), -1);
 	column->pack_start (*heading, false, false);
 	column->pack_start (*form_field (_("Name"), new_name_entry), false, false);
 	column->pack_start (*form_field (_("Location"), new_folder_chooser), false, false);
@@ -1244,7 +1246,7 @@ SessionDialog::rebuild_template_buttons ()
 		ArdourButton* b = new ArdourButton (ArdourButton::led_default_elements);
 		b->set_text (name);
 		b->set_name ("tab button");
-		b->set_alignment (0.0, 0.5);
+		b->set_alignment (0.5, 0.5);
 		b->set_corner_radius (6);
 		b->set_led_left (true);
 		b->set_size_request (-1, rintf (34 * scale));
@@ -2120,10 +2122,10 @@ SessionDialog::build_left_panel ()
 	_left_panel.set_spacing (8);
 	_left_panel.set_border_width (rintf (8 * scale));
 	_left_panel.set_size_request (rintf (330 * scale), -1);
-	_left_panel.pack_start (*brand, false, false, 6);
+	_left_panel.pack_start (*brand, false, false, 0);
 	_left_panel.pack_start (new_button, false, false);
 	_left_panel.pack_start (existing_button, false, false);
-	_left_panel.pack_start (_recent_heading, false, false, 6);
+	_left_panel.pack_start (_recent_heading, false, false, rintf (22 * scale));
 	_left_panel.pack_start (_recent_list_box, true, true);
 }
 
