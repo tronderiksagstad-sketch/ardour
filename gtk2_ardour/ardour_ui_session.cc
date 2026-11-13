@@ -1240,7 +1240,7 @@ ARDOUR_UI::ask_about_saving_session (const vector<string>& actions)
 	dhbox.set_homogeneous (false);
 	dhbox.pack_start (*dimage, false, false, 5);
 	dhbox.pack_start (prompt_label, true, false, 5);
-	window.get_vbox()->pack_start (dhbox, true, true, 16);
+	window.get_vbox()->pack_start (dhbox, true, true, 32);
 
 	window.set_name (_("Prompter"));
 	window.set_modal (true);
@@ -1248,13 +1248,13 @@ ARDOUR_UI::ask_about_saving_session (const vector<string>& actions)
 	/* in the middle of the screen, with large text and large buttons */
 	window.set_position (Gtk::WIN_POS_CENTER);
 	window.get_vbox()->set_border_width (16);
-	window.get_action_area()->set_border_width (24);
+	window.get_action_area()->set_border_width (32);
 	window.get_action_area()->set_layout (Gtk::BUTTONBOX_SPREAD);
 	dhbox.show();
 	prompt_label.show();
 	dimage->show();
-	ARDOUR_UI_UTILS::enlarge_fonts (window, 2.1);
-	window.set_default_size (rintf (820 * UIConfiguration::instance ().get_ui_scale ()), -1);
+	ARDOUR_UI_UTILS::enlarge_fonts (window, 1.6);
+	window.set_default_size (rintf (700 * UIConfiguration::instance ().get_ui_scale ()), -1);
 	window.show();
 	window.present ();
 
