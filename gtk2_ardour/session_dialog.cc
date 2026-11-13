@@ -311,8 +311,6 @@ SessionDialog::SessionDialog (DialogTab initial_tab, const std::string& session_
 	, _chosen_rate (48000)
 	, _chosen_format (FormatFloat)
 	, _ignore_browser_selection_until (0)
-	, _browser_press_x (0)
-	, _browser_press_y (0)
 {
 	action_group = ActionGroup::create (X_("SessionDialog"));
 
@@ -387,19 +385,12 @@ SessionDialog::SessionDialog (DialogTab initial_tab, const std::string& session_
 #endif
 
 	build_left_panel ();
-	build_right_panel ();
-	build_top_row ();
 
-	_foot.set_alignment (0.5, 0.5);
-	_foot.set_padding (0, rintf (8 * UIConfiguration::instance ().get_ui_scale ()));
-
-	/* three columns: recent sessions | the main thing | start from; the
-	 * outer two are of equal width and the middle takes the rest */
-	_open_table.attach (_top_row,      0,3, top,     top + 1, FILL|EXPAND, FILL,        0, 0);
-	_open_table.attach (_left_panel,   0,1, top + 1, top + 2, FILL,        FILL|EXPAND, 0, 0);
-	_open_table.attach (_tabs,         1,2, top + 1, top + 2, FILL|EXPAND, FILL|EXPAND, 0, 0);
-	_open_table.attach (_right_pages,  2,3, top + 1, top + 2, FILL,        FILL|EXPAND, 0, 0);
-	_open_table.attach (_foot,         0,3, top + 2, top + 3, FILL|EXPAND, FILL,        0, 0);
+	_open_table.attach (_left_panel,       0,1, top, row + 1, FILL,        FILL|EXPAND, 0, 0);
+	Label *vspacer = manage (new Label());
+	vspacer->set_size_request(16, -1);
+	_open_table.attach (*vspacer,          1,2, top, row + 1, FILL,        FILL|EXPAND, 0, 0);
+	_open_table.attach (_tabs,             2,3, top, row + 1, FILL|EXPAND, FILL|EXPAND, 0, 0);
 
 	_tabs.set_show_tabs(false);
 	_tabs.set_show_border(false);
@@ -492,10 +483,6 @@ SessionDialog::SessionDialog (DialogTab initial_tab, const std::string& session_
 
 	set_title (PROGRAM_NAME);
 	ARDOUR_UI_UTILS::enlarge_fonts (*get_vbox (), 1.3);
-	hide_chooser_sidebar ();
-	connect_browser_clicks ();
-	update_mode (initial_tab == Open ? 2 : 0);
-	set_default_size (rintf (1240 * UIConfiguration::instance ().get_ui_scale ()), rintf (780 * UIConfiguration::instance ().get_ui_scale ()));
 }
 
 SessionDialog::~SessionDialog()
@@ -529,8 +516,6 @@ SessionDialog::tab_page_switched(GtkNotebookPage*, guint page_number)
 	demo_button.set_active_state     (page_number==3 ? Gtkmm2ext::ExplicitActive : Gtkmm2ext::Off);
 	prefs_button.set_active_state    (page_number==4 ? Gtkmm2ext::ExplicitActive : Gtkmm2ext::Off);
 	/* clang-format on */
-
-	update_mode (page_number);
 
 	//check the status of each tab and sensitize the 'open' button appropriately
 	open_button->set_sensitive(false);
@@ -625,41 +610,27 @@ SessionDialog::master_channel_count ()
 	return 2;
 }
 
-/* A template is for a new session only. The template tiles sit on the
- * same screen as the recent sessions, so one of them may well be lit
- * when an existing session is opened: it must not be applied to that. */
-bool
-SessionDialog::making_new_session () const
-{
-	return _chosen_recent.empty () && const_cast<Gtk::Notebook&> (_tabs).get_current_page () == 0;
-}
-
 bool
 SessionDialog::use_session_template () const
 {
-	return making_new_session () && template_is_selected ();
+	/* a template is for a new session only, not for one that is being opened */
+	if (!_chosen_recent.empty () || const_cast<Gtk::Notebook&> (_tabs).get_current_page () != 0) {
+		return false;
+	}
+
+	if (template_chooser.get_selection()->count_selected_rows() > 0) {
+		return true;
+	}
+
+	return false;
 }
 
 std::string
 SessionDialog::session_template_name ()
 {
-	return making_new_session () ? selected_template () : string ();
-}
+	if (use_session_template ()) {
 
-/* what the template tiles show, whatever is being opened */
-bool
-SessionDialog::template_is_selected () const
-{
-	return const_cast<Gtk::TreeView&> (template_chooser).get_selection()->count_selected_rows() > 0;
-}
-
-std::string
-SessionDialog::selected_template () const
-{
-	Gtk::TreeView& tc (const_cast<Gtk::TreeView&> (template_chooser));
-	if (tc.get_selection()->count_selected_rows() > 0) {
-
-		TreeIter const iter = tc.get_selection()->get_selected();
+		TreeIter const iter = template_chooser.get_selection()->get_selected();
 
 		if (iter) {
 			string s = (*iter)[session_template_columns.path];
@@ -896,8 +867,10 @@ SessionDialog::existing_file_selected ()
 
 	open_button->set_sensitive(true);  //still potentially openable; checks for session archives, .ptf, and .aaf will have to occur later
 
-	/* nothing opens here: moving through the list with the arrow keys only
-	 * selects. A click (browser_row_clicked) or Enter opens. */
+	/* one click opens it */
+	if (g_get_monotonic_time () > _ignore_browser_selection_until) {
+		response (RESPONSE_ACCEPT);
+	}
 }
 
 void
@@ -1077,22 +1050,25 @@ SessionDialog::populate_session_templates ()
 	rebuild_template_buttons ();
 }
 
-/* a small caption centred above its field, the field centred under it */
-static Gtk::VBox*
-centred_field (std::string const& caption, Gtk::Widget& w)
+/* A small bold caption above each field of the new-session form */
+static Gtk::Label*
+form_caption (std::string const& text)
 {
 	Gtk::Label* l = manage (new Gtk::Label);
-	l->set_markup (string_compose ("<span size=\"small\" weight=\"bold\" alpha=\"65%%\">%1</span>", Gtkmm2ext::markup_escape_text (caption)));
-	l->set_alignment (0.5, 0.5);
-	Gtk::Alignment* a = manage (new Gtk::Alignment (0.5, 0.5, 0.0, 0.0));
-	a->add (w);
-	Gtk::VBox* v = manage (new Gtk::VBox);
-	v->set_spacing (8);
-	v->pack_start (*l, false, false);
-	v->pack_start (*a, false, false);
-	return v;
+	l->set_markup (string_compose ("<span weight=\"bold\" alpha=\"80%%\">%1</span>", Gtkmm2ext::markup_escape_text (text)));
+	l->set_alignment (0.0, 0.5);
+	return l;
 }
 
+static Gtk::VBox*
+form_field (std::string const& caption, Gtk::Widget& w)
+{
+	Gtk::VBox* v = manage (new Gtk::VBox);
+	v->set_spacing (4);
+	v->pack_start (*form_caption (caption), false, false);
+	v->pack_start (w, false, false);
+	return v;
+}
 
 void
 SessionDialog::setup_new_session_page ()
@@ -1191,22 +1167,25 @@ SessionDialog::setup_new_session_page ()
 	_create_button.set_size_request (-1, rintf (44 * scale));
 	_create_button.signal_clicked.connect (sigc::mem_fun (*this, &SessionDialog::new_name_activated));
 
-	/* The middle: what is needed, centred, one thing under the other. The
-	 * name is typed in the bar at the top; the template is chosen on the right. */
-	const int width = rintf (380 * scale);
-	new_folder_chooser.set_size_request (width, -1);
-	rate_box->set_size_request (width, rintf (36 * scale));
-	depth_box->set_size_request (width, rintf (36 * scale));
-	_create_button.set_size_request (width, rintf (48 * scale));
+	Gtk::Label* heading = manage (new Gtk::Label);
+	heading->set_markup (string_compose ("<span size=\"x-large\" weight=\"bold\">%1</span>", _("New session")));
+	heading->set_alignment (0.0, 0.5);
 
 	Gtk::VBox* column = manage (new Gtk::VBox);
-	column->set_spacing (rintf (24 * scale));
-	column->pack_start (*centred_field (_("LOCATION"), new_folder_chooser), false, false);
-	column->pack_start (*centred_field (_("SAMPLE RATE"), *rate_box), false, false);
-	column->pack_start (*centred_field (_("BIT DEPTH"), *depth_box), false, false);
+	column->set_spacing (12);
+	column->set_size_request (rintf (400 * scale), -1);
+	column->pack_start (*heading, false, false);
+	column->pack_start (*form_field (_("Name"), new_name_entry), false, false);
+	column->pack_start (*form_field (_("Location"), new_folder_chooser), false, false);
+	if (load_template_override.empty ()) {
+		column->pack_start (*form_field (_("Start from"), _template_radio_box), false, false);
+	}
+	column->pack_start (*form_field (_("Sample rate"), *rate_box), false, false);
+	column->pack_start (*form_field (_("Bit depth"), *depth_box), false, false);
 	column->pack_start (_create_button, false, false, 6);
 
-	Gtk::Alignment* center = manage (new Gtk::Alignment (0.5, 0.5, 0.0, 0.0));
+	Gtk::Alignment* center = manage (new Gtk::Alignment (0.5, 0.0, 0.0, 0.0));
+	center->set_padding (rintf (8 * scale), rintf (4 * scale), 0, 0);
 	center->add (*column);
 
 	session_new_vbox.pack_start (*center, true, true);
@@ -1262,12 +1241,13 @@ SessionDialog::rebuild_template_buttons ()
 			name = _("Empty session");
 		}
 
-		ArdourButton* b = new ArdourButton;
+		ArdourButton* b = new ArdourButton (ArdourButton::led_default_elements);
 		b->set_text (name);
 		b->set_name ("tab button");
-		b->set_alignment (0.5, 0.5);
-		b->set_corner_radius (7);
-		b->set_size_request (-1, rintf (44 * scale));
+		b->set_alignment (0.0, 0.5);
+		b->set_corner_radius (6);
+		b->set_led_left (true);
+		b->set_size_request (-1, rintf (34 * scale));
 		if (!desc.empty ()) {
 			set_tooltip (*b, desc);
 		}
@@ -1294,28 +1274,15 @@ SessionDialog::template_button_clicked (std::string path)
 void
 SessionDialog::sync_template_buttons ()
 {
-	std::string selected = selected_template ();
-	bool        any      = template_is_selected ();
+	std::string selected = session_template_name ();
+	bool        any      = use_session_template ();
 	size_t      n        = 0;
 
 	for (Gtk::TreeModel::iterator i = template_model->children ().begin (); i != template_model->children ().end () && n < _template_buttons.size (); ++i, ++n) {
 		std::string path = (*i)[session_template_columns.path];
 		const bool  on   = any && path == selected;
 		_template_buttons[n]->set_active_state (on ? Gtkmm2ext::ExplicitActive : Gtkmm2ext::Off);
-		if (on) {
-			std::string desc = (*i)[session_template_columns.description];
-			if (path.empty ()) {
-				desc = _("Starts with no tracks. Drag down in the empty area to add as many as you need.");
-			}
-			/* one short paragraph: the first lines of the description */
-			std::string::size_type cut = desc.find ("\n\n");
-			if (cut != std::string::npos) {
-				desc = desc.substr (0, cut);
-			}
-			_template_info.set_text (desc);
-		}
 	}
-	_template_preview.queue_draw ();
 }
 
 void
@@ -2136,386 +2103,28 @@ SessionDialog::build_left_panel ()
 {
 	const float scale = UIConfiguration::instance ().get_ui_scale ();
 
-	new_button.set_text (string_compose ("+ %1", _("New session")));
-	existing_button.set_text (_("Browse..."));
-	for (ArdourButton* b : { &new_button, &existing_button }) {
-		b->set_alignment (0.5, 0.5);
-		b->set_corner_radius (8);
-		b->set_size_request (-1, rintf (44 * scale));
-	}
+	Gtk::Label* brand = manage (new Gtk::Label);
+	brand->set_markup (string_compose ("<span size=\"x-large\" weight=\"bold\">%1</span>\n<span alpha=\"60%%\">%2</span>",
+	                                   PROGRAM_NAME, string_compose (_("Version %1"), VERSIONSTRING)));
+	brand->set_alignment (0.0, 0.5);
 
-	_recent_list_box.set_spacing (2);
-	_recent_list_box.set_homogeneous (true);
+	new_button.set_size_request (-1, rintf (46 * scale));
+	existing_button.set_size_request (-1, rintf (46 * scale));
 
-	Gtk::HBox* tiles = manage (new Gtk::HBox (true, rintf (6 * scale)));
-	tiles->pack_start (new_button, true, true);
-	tiles->pack_start (existing_button, true, true);
+	_recent_heading.set_markup (string_compose ("<span size=\"small\" weight=\"bold\" alpha=\"65%%\">%1</span>", _("RECENT")));
+	_recent_heading.set_alignment (0.0, 1.0);
+	_recent_heading.set_no_show_all (true);
+
+	_recent_list_box.set_spacing (4);
 
 	_left_panel.set_spacing (8);
-	_left_panel.set_border_width (rintf (12 * scale));
-	_left_panel.set_size_request (rintf (350 * scale), -1);
+	_left_panel.set_border_width (rintf (8 * scale));
+	_left_panel.set_size_request (rintf (330 * scale), -1);
+	_left_panel.pack_start (*brand, false, false, 6);
+	_left_panel.pack_start (new_button, false, false);
+	_left_panel.pack_start (existing_button, false, false);
+	_left_panel.pack_start (_recent_heading, false, false, 6);
 	_left_panel.pack_start (_recent_list_box, true, true);
-	_left_panel.pack_start (*tiles, false, false, 6);
-}
-
-/* the top row: one thing centred over each section */
-void
-SessionDialog::build_top_row ()
-{
-	const float scale = UIConfiguration::instance ().get_ui_scale ();
-
-	_left_title.set_markup (string_compose ("<span size=\"small\" weight=\"bold\" alpha=\"65%%\">%1</span>", _("RECENT SESSIONS")));
-	_left_title.set_size_request (rintf (350 * scale), rintf (64 * scale));
-	_right_title.set_size_request (rintf (350 * scale), rintf (64 * scale));
-
-	Pango::FontDescription fd = UIConfiguration::instance ().get_NormalFont ();
-	fd.set_size (rintf (fd.get_size () * 1.5));
-	for (Gtk::Entry* e : { &new_name_entry, &_browse_entry }) {
-		e->set_alignment (0.5);
-		e->set_size_request (rintf (460 * scale), rintf (42 * scale));
-		e->modify_font (fd);
-	}
-	_browse_entry.signal_changed ().connect (sigc::mem_fun (*this, &SessionDialog::filter_browser));
-	/* GTK entries have no placeholder: draw one on the text area while it is empty */
-	_browse_entry.signal_expose_event ().connect ([this] (GdkEventExpose* ev) {
-		GdkWindow* tw = gtk_entry_get_text_window (_browse_entry.gobj ());
-		if (ev->window != tw || !_browse_entry.get_text ().empty ()) {
-			return false;
-		}
-		Glib::RefPtr<Gdk::Window> win = Glib::RefPtr<Gdk::Window>::cast_static (Glib::wrap (tw, true));
-		Cairo::RefPtr<Cairo::Context> cr = win->create_cairo_context ();
-		Glib::RefPtr<Pango::Layout> l = Glib::wrap (pango_cairo_create_layout (cr->cobj ()));
-		l->set_font_description (_browse_entry.get_pango_context ()->get_font_description ());
-		l->set_text (_("Find a session in this folder"));
-		int tw_, th_, ww, wh;
-		l->get_pixel_size (tw_, th_);
-		win->get_size (ww, wh);
-		cr->set_source_rgba (1, 1, 1, 0.4);
-		cr->move_to ((ww - tw_) / 2.0, (wh - th_) / 2.0);
-		pango_cairo_show_layout (cr->cobj (), l->gobj ());
-		return false;
-	}, true);
-	_browse_entry.signal_key_press_event ().connect ([this] (GdkEventKey* ev) {
-		if (ev->keyval == GDK_Escape && !_browse_entry.get_text ().empty ()) {
-			_browse_entry.set_text ("");
-			return true;
-		}
-		return false;
-	}, false);
-
-	Gtk::Alignment* name_c = manage (new Gtk::Alignment (0.5, 0.5, 0.0, 0.0));
-	name_c->add (new_name_entry);
-	Gtk::Alignment* find_c = manage (new Gtk::Alignment (0.5, 0.5, 0.0, 0.0));
-	find_c->add (_browse_entry);
-	_bar_pages.set_show_tabs (false);
-	_bar_pages.set_show_border (false);
-	_bar_pages.append_page (*name_c);
-	_bar_pages.append_page (*find_c);
-	name_c->show_all ();
-	find_c->show_all ();
-
-	_top_row.pack_start (_left_title, false, false);
-	_top_row.pack_start (_bar_pages, true, true);
-	_top_row.pack_start (_right_title, false, false);
-	_top_row.show_all ();
-}
-
-/* the right: how the new session starts, or places to browse from */
-void
-SessionDialog::build_right_panel ()
-{
-	const float scale = UIConfiguration::instance ().get_ui_scale ();
-
-	_template_preview.set_size_request (-1, rintf (110 * scale));
-	_template_preview.signal_expose_event ().connect (sigc::mem_fun (*this, &SessionDialog::template_preview_expose));
-
-	_template_info.set_line_wrap (true);
-	_template_info.set_justify (Gtk::JUSTIFY_CENTER);
-	_template_info.set_alignment (0.5, 0.0);
-	_template_info.set_size_request (rintf (310 * scale), -1);
-
-	_template_radio_box.set_spacing (6);
-
-	_right_new_box.set_spacing (8);
-	_right_new_box.set_border_width (rintf (12 * scale));
-	_right_new_box.pack_start (_template_preview, false, false, 6);
-	_right_new_box.pack_start (_template_radio_box, false, false);
-	_right_new_box.pack_start (_template_info, false, false, 10);
-
-	_places_box.set_spacing (6);
-	_places_box.set_border_width (rintf (12 * scale));
-	build_places ();
-
-	_right_pages.set_show_tabs (false);
-	_right_pages.set_show_border (false);
-	_right_pages.append_page (_right_new_box);
-	_right_pages.append_page (_places_box);
-	_right_pages.set_size_request (rintf (350 * scale), -1);
-	_right_new_box.show_all ();
-	_places_box.show_all ();
-	_right_pages.show ();
-}
-
-void
-SessionDialog::build_places ()
-{
-	const float scale = UIConfiguration::instance ().get_ui_scale ();
-
-	std::vector<std::pair<std::string, std::string> > places;
-	places.push_back (std::make_pair (std::string (_("Home")), std::string (Glib::get_home_dir ())));
-	const std::string sessions = poor_mans_glob (Config->get_default_session_parent_dir ());
-	if (!sessions.empty () && Glib::file_test (sessions, Glib::FILE_TEST_IS_DIR)) {
-		places.push_back (std::make_pair (std::string (_("Sessions")), sessions));
-	}
-	const char* dirs[][2] = { { N_("Music"), "XDG_MUSIC_DIR" }, { N_("Desktop"), "XDG_DESKTOP_DIR" }, { N_("Documents"), "XDG_DOCUMENTS_DIR" } };
-	const GUserDirectory ids[] = { G_USER_DIRECTORY_MUSIC, G_USER_DIRECTORY_DESKTOP, G_USER_DIRECTORY_DOCUMENTS };
-	for (int i = 0; i < 3; ++i) {
-		const char* d = g_get_user_special_dir (ids[i]);
-		if (d && Glib::file_test (d, Glib::FILE_TEST_IS_DIR) && std::string (d) != Glib::get_home_dir ()) {
-			places.push_back (std::make_pair (std::string (_(dirs[i][0])), std::string (d)));
-		}
-	}
-	/* disks that are plugged in */
-	for (std::string base : { std::string ("/media/") + Glib::get_user_name (), std::string ("/run/media/") + Glib::get_user_name (), std::string ("/media") }) {
-		if (!Glib::file_test (base, Glib::FILE_TEST_IS_DIR)) {
-			continue;
-		}
-		try {
-			Glib::Dir dir (base);
-			for (std::string const& n : dir) {
-				const std::string full = Glib::build_filename (base, n);
-				if (Glib::file_test (full, Glib::FILE_TEST_IS_DIR) && n != Glib::get_user_name ()) {
-					places.push_back (std::make_pair (n, full));
-				}
-			}
-		} catch (...) {
-		}
-		break;
-	}
-
-	Gtk::Table* grid = manage (new Gtk::Table);
-	grid->set_homogeneous (true);
-	grid->set_spacings (rintf (6 * scale));
-	int n = 0;
-	for (auto const& pl : places) {
-		ArdourButton* b = manage (new ArdourButton (pl.first));
-		b->set_name ("tab button");
-		b->set_corner_radius (7);
-		b->set_alignment (0.5, 0.5);
-		b->set_size_request (-1, rintf (44 * scale));
-		b->set_text_ellipsize (Pango::ELLIPSIZE_END);
-		b->signal_clicked.connect (sigc::bind (sigc::mem_fun (*this, &SessionDialog::place_clicked), pl.second));
-		grid->attach (*b, n % 2, n % 2 + 1, n / 2, n / 2 + 1);
-		_place_buttons.push_back (b);
-		++n;
-	}
-	Gtk::Label* hint = manage (new Gtk::Label (_("Jump to a place, then click a session to open it.")));
-	hint->set_line_wrap (true);
-	hint->set_justify (Gtk::JUSTIFY_CENTER);
-	hint->set_size_request (rintf (310 * scale), -1);
-	_places_box.pack_start (*grid, false, false);
-	_places_box.pack_start (*hint, false, false, 12);
-}
-
-void
-SessionDialog::place_clicked (std::string path)
-{
-	browser_folder_changed ();
-	existing_session_chooser.set_current_folder (path);
-}
-
-/* typing in the bar while browsing narrows the sessions shown in this folder */
-void
-SessionDialog::filter_browser ()
-{
-	const std::string want = Glib::ustring (_browse_entry.get_text ()).lowercase ();
-	Gtk::FileFilter f;
-	f.set_name (string_compose (_("%1 sessions"), PROGRAM_NAME));
-	if (want.empty ()) {
-		f.add_pattern (string_compose (X_("*%1"), ARDOUR::statefile_suffix));
-	} else {
-		f.add_custom (Gtk::FILE_FILTER_DISPLAY_NAME, [want] (Gtk::FileFilter::Info const& info) {
-			const std::string name = Glib::ustring (info.display_name).lowercase ();
-			return name.find (want) != std::string::npos && name.size () > strlen (ARDOUR::statefile_suffix)
-			       && name.compare (name.size () - strlen (ARDOUR::statefile_suffix), strlen (ARDOUR::statefile_suffix), ARDOUR::statefile_suffix) == 0;
-		});
-	}
-	existing_session_chooser.set_filter (f);
-}
-
-/* the browser's own list of places is replaced by the buttons on the right */
-static void
-find_paned_cb (GtkWidget* w, gpointer data)
-{
-	GtkWidget** found = (GtkWidget**) data;
-	if (*found) {
-		return;
-	}
-	if (GTK_IS_PANED (w)) {
-		*found = w;
-	} else if (GTK_IS_CONTAINER (w)) {
-		gtk_container_forall (GTK_CONTAINER (w), find_paned_cb, data);
-	}
-}
-
-void
-SessionDialog::hide_chooser_sidebar ()
-{
-	GtkWidget* paned = 0;
-	gtk_container_forall (GTK_CONTAINER (existing_session_chooser.gobj ()), find_paned_cb, &paned);
-	if (paned) {
-		if (GtkWidget* side = gtk_paned_get_child1 (GTK_PANED (paned))) {
-			gtk_widget_set_no_show_all (side, TRUE);
-			gtk_widget_hide (side);
-		}
-	}
-}
-
-static void
-find_tree_view_cb (GtkWidget* w, gpointer data)
-{
-	GtkWidget** found = (GtkWidget**) data;
-	if (*found) {
-		return;
-	}
-	if (GTK_IS_TREE_VIEW (w)) {
-		*found = w;
-	} else if (GTK_IS_CONTAINER (w)) {
-		gtk_container_forall (GTK_CONTAINER (w), find_tree_view_cb, data);
-	}
-}
-
-/* One click on a row of the file list does what a double click does in
- * other programs: goes into a folder, opens a session. */
-void
-SessionDialog::connect_browser_clicks ()
-{
-	GtkWidget* paned = 0;
-	GtkWidget* list  = 0;
-	gtk_container_forall (GTK_CONTAINER (existing_session_chooser.gobj ()), find_paned_cb, &paned);
-	if (paned && gtk_paned_get_child2 (GTK_PANED (paned))) {
-		find_tree_view_cb (gtk_paned_get_child2 (GTK_PANED (paned)), &list);
-	}
-	if (!list) {
-		return;
-	}
-	typedef gboolean (*ButtonCallback) (GtkWidget*, GdkEventButton*, gpointer);
-	const ButtonCallback cb = [] (GtkWidget* w, GdkEventButton* ev, gpointer d) -> gboolean {
-		return static_cast<SessionDialog*> (d)->browser_list_button (GTK_TREE_VIEW (w), ev);
-	};
-	g_signal_connect (list, "button-press-event", G_CALLBACK (cb), this);
-	g_signal_connect (list, "button-release-event", G_CALLBACK (cb), this);
-}
-
-/* runs before the list's own handling of the click */
-bool
-SessionDialog::browser_list_button (GtkTreeView* tv, GdkEventButton* ev)
-{
-	if (ev->button != 1 || ev->window != gtk_tree_view_get_bin_window (tv)) {
-		return false;
-	}
-
-	if (g_get_monotonic_time () <= _ignore_browser_selection_until) {
-		/* the second click of a double click, arriving after the first one
-		 * already took us into a folder: it is not meant for whatever is
-		 * under the pointer now */
-		_browser_press_row.clear ();
-		return true;
-	}
-
-	std::string  row;
-	GtkTreePath* path = 0;
-	if (gtk_tree_view_get_path_at_pos (tv, (gint) ev->x, (gint) ev->y, &path, 0, 0, 0) && path) {
-		gchar* str = gtk_tree_path_to_string (path);
-		row        = str;
-		g_free (str);
-		gtk_tree_path_free (path);
-	}
-
-	if (ev->type == GDK_BUTTON_PRESS) {
-		const bool plain   = !(ev->state & (GDK_CONTROL_MASK | GDK_SHIFT_MASK));
-		_browser_press_row = plain ? row : std::string ();
-		_browser_press_x   = ev->x_root;
-		_browser_press_y   = ev->y_root;
-	} else if (ev->type == GDK_BUTTON_RELEASE) {
-		const bool clicked = !row.empty () && row == _browser_press_row
-		                     && fabs (ev->x_root - _browser_press_x) < 8 && fabs (ev->y_root - _browser_press_y) < 8;
-		_browser_press_row.clear ();
-		if (clicked) {
-			/* once the list has finished with the click itself */
-			Glib::signal_idle ().connect_once (sigc::mem_fun (*this, &SessionDialog::browser_row_clicked));
-		}
-	}
-	return false;
-}
-
-void
-SessionDialog::browser_row_clicked ()
-{
-	if (_tabs.get_current_page () != 2) {
-		return;
-	}
-	const std::string f = existing_session_chooser.get_filename ();
-	if (f.empty ()) {
-		return;
-	}
-	if (Glib::file_test (f, Glib::FILE_TEST_IS_DIR)) {
-		browser_folder_changed ();
-		existing_session_chooser.set_current_folder (f);
-		return;
-	}
-	existing_file_selected (); /* looks at the file, and says whether it can be opened */
-	if (open_button->get_sensitive ()) {
-		response (RESPONSE_ACCEPT);
-	}
-}
-
-void
-SessionDialog::update_mode (int page)
-{
-	const bool browse = (page == 2);
-	_bar_pages.set_current_page (browse ? 1 : 0);
-	_right_pages.set_current_page (browse ? 1 : 0);
-	_right_title.set_markup (string_compose ("<span size=\"small\" weight=\"bold\" alpha=\"65%%\">%1</span>", browse ? _("PLACES") : _("START FROM")));
-	_foot.set_markup (string_compose ("<span alpha=\"80%%\">%1</span>", browse ? _("Click a folder to go into it. Click a session to open it.")
-	                                                                            : _("Type a name and press Enter to create it. Click a recent session to open it.")));
-	if (browse) {
-		_browse_entry.grab_focus ();
-	}
-}
-
-/* a few coloured bars: what the new session will start with */
-bool
-SessionDialog::template_preview_expose (GdkEventExpose*)
-{
-	Cairo::RefPtr<Cairo::Context> cr = _template_preview.get_window ()->create_cairo_context ();
-	const double w = _template_preview.get_width (), h = _template_preview.get_height ();
-	Gtkmm2ext::rounded_rectangle (cr, 0.5, 0.5, w - 1, h - 1, 9);
-	cr->set_source_rgba (0.05, 0.06, 0.07, 1.0);
-	cr->fill_preserve ();
-	cr->set_source_rgba (1, 1, 1, 0.1);
-	cr->set_line_width (1);
-	cr->stroke ();
-
-	const std::string path = selected_template ();
-	if (!template_is_selected () || path.empty ()) {
-		Glib::RefPtr<Pango::Layout> l = _template_preview.create_pango_layout (_("No tracks yet"));
-		int tw, th;
-		l->get_pixel_size (tw, th);
-		cr->set_source_rgba (1, 1, 1, 0.45);
-		cr->move_to ((w - tw) / 2, (h - th) / 2);
-		pango_cairo_show_layout (cr->cobj (), l->gobj ());
-		return true;
-	}
-	static const double colours[][3] = { { 0.95, 0.63, 0.24 }, { 0.90, 0.78, 0.29 }, { 0.31, 0.82, 0.65 }, { 0.35, 0.66, 1.0 }, { 0.71, 0.55, 1.0 }, { 1.0, 0.55, 0.52 } };
-	const double pad = 18, bh = 9, gap = (h - 2 * pad - 6 * bh) / 5;
-	for (int i = 0; i < 6; ++i) {
-		const double bw = (w - 2 * pad) * (0.55 + 0.45 * ((i * 37) % 45) / 45.0);
-		Gtkmm2ext::rounded_rectangle (cr, (w - bw) / 2, pad + i * (bh + gap), bw, bh, 3);
-		cr->set_source_rgba (colours[i][0], colours[i][1], colours[i][2], 0.9);
-		cr->fill ();
-	}
-	return true;
 }
 
 void
@@ -2611,10 +2220,11 @@ SessionDialog::start_key_press (GdkEventKey* ev)
 	return false;
 }
 
-/* For a moment after the folder changes (or the browser is switched to),
- * clicks on the file list are ignored: see browser_list_button(). */
+/* The file browser opens a session on a single click. Folder changes
+ * (and switching to the browser) can make GTK report a selection by
+ * itself, so selections within a moment of those are ignored. */
 void
 SessionDialog::browser_folder_changed ()
 {
-	_ignore_browser_selection_until = g_get_monotonic_time () + 500000;
+	_ignore_browser_selection_until = g_get_monotonic_time () + 400000;
 }

@@ -36,6 +36,7 @@
 */
 
 #include <cmath>
+#include <set>
 
 #include <glibmm/miscutils.h>
 #include <ytkmm/accelmap.h>
@@ -837,11 +838,64 @@ ARDOUR_UI::setup_action_tooltips ()
 	ActionManager::get_action (X_("Monitor Section"), X_("monitor-cut-all"))->set_tooltip (_("Monitor section mute output"));
 }
 
+/* Each time the menu opens: leave out the entries that cannot be used right
+ * now (Redo with nothing to redo, Crop with no range, ...) and the separators
+ * that would then stand next to each other or at an end. They come back the
+ * next time, if they can be used by then. */
+static void
+tidy_menu (Gtk::Menu* menu, std::set<Gtk::Widget*>* left_out)
+{
+	for (Gtk::Widget* w : *left_out) {
+		w->show ();
+	}
+	left_out->clear ();
+
+	std::vector<Gtk::Widget*> kids = menu->get_children ();
+	for (Gtk::Widget* w : kids) {
+		if (dynamic_cast<Gtk::SeparatorMenuItem*> (w) || !w->get_visible ()) {
+			continue;
+		}
+		if (!w->get_sensitive ()) {
+			w->hide ();
+			left_out->insert (w);
+		}
+	}
+
+	bool        have_item = false;
+	Gtk::Widget* pending  = 0;
+	for (Gtk::Widget* w : kids) {
+		if (dynamic_cast<Gtk::SeparatorMenuItem*> (w)) {
+			if (!have_item || pending) {
+				if (w->get_visible ()) {
+					w->hide ();
+					left_out->insert (w);
+				}
+			} else if (w->get_visible ()) {
+				pending = w;
+			}
+		} else if (w->get_visible ()) {
+			have_item = true;
+			pending   = 0;
+		}
+	}
+	if (pending) {
+		pending->hide ();
+		left_out->insert (pending);
+	}
+}
+
 void
 ARDOUR_UI::build_menu_bar ()
 {
 	menu_bar = dynamic_cast<MenuBar*> (ActionManager::get_widget (X_("/Main")));
 	menu_bar->set_name ("MainMenuBar");
+
+	if (Gtk::MenuItem* edit_item = dynamic_cast<Gtk::MenuItem*> (ActionManager::get_widget (X_("/ui/Main/Edit")))) {
+		if (Gtk::Menu* edit_menu = edit_item->get_submenu ()) {
+			static std::set<Gtk::Widget*> left_out;
+			edit_menu->signal_show ().connect ([edit_menu] () { tidy_menu (edit_menu, &left_out); });
+		}
+	}
 
 	EventBox* ev = manage (new EventBox);
 	ev->set_name ("MainMenuBar");

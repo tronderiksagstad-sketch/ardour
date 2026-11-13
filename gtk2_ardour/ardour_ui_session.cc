@@ -1244,10 +1244,14 @@ ARDOUR_UI::ask_about_saving_session (const vector<string>& actions)
 	window.set_name (_("Prompter"));
 	window.set_modal (true);
 	window.set_resizable (false);
-
+	/* in the middle of the screen, with large text and large buttons */
+	window.set_position (Gtk::WIN_POS_CENTER);
+	window.get_vbox()->set_border_width (16);
 	dhbox.show();
 	prompt_label.show();
 	dimage->show();
+	ARDOUR_UI_UTILS::enlarge_fonts (window, 2.1);
+	window.set_default_size (rintf (820 * UIConfiguration::instance ().get_ui_scale ()), -1);
 	window.show();
 	window.present ();
 

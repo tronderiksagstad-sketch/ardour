@@ -314,37 +314,9 @@ private:
 	Gtk::VBox  _recent_list_box;
 	Gtk::Label _recent_heading;
 	void build_left_panel ();
-
-	/* The centred layout: a top row with one thing over each section
-	 * (recent sessions, the name bar, start from), the new session or
-	 * the file browser in the middle, the start-from choices or places
-	 * on the right, equal in width to the left. */
-	Gtk::HBox    _top_row;
-	Gtk::Label   _left_title;
-	Gtk::Label   _right_title;
-	Gtk::Notebook _bar_pages;
-	Gtk::Entry   _browse_entry;
-	Gtk::Notebook _right_pages;
-	Gtk::VBox    _right_new_box;
-	Gtk::VBox    _places_box;
-	Gtk::DrawingArea _template_preview;
-	Gtk::Label   _template_info;
-	Gtk::Label   _foot;
-	std::vector<ArdourWidgets::ArdourButton*> _place_buttons;
-	void build_top_row ();
-	void build_right_panel ();
-	void build_places ();
-	void filter_browser ();
-	void update_mode (int page);
-	void hide_chooser_sidebar ();
-	bool template_preview_expose (GdkEventExpose*);
-	void place_clicked (std::string);
 	void fill_recent_list ();
 	void open_recent_path (std::string const& fullpath, bool safe_mode);
 	std::string _chosen_recent; ///< recent session clicked in the left panel
-	bool        making_new_session () const;
-	bool        template_is_selected () const;
-	std::string selected_template () const;
 	bool start_key_press (GdkEventKey*);
 
 	Gtk::VBox _template_radio_box;
@@ -366,12 +338,6 @@ private:
 	ArdourWidgets::ArdourButton _create_button;
 	int64_t _ignore_browser_selection_until;
 	void browser_folder_changed ();
-	void connect_browser_clicks ();
-	bool browser_list_button (GtkTreeView*, GdkEventButton*);
-	void browser_row_clicked ();
-	std::string _browser_press_row; ///< the row the mouse button went down on
-	double      _browser_press_x;
-	double      _browser_press_y;
 
 	/* always there */
 
