@@ -1233,13 +1233,14 @@ ARDOUR_UI::ask_about_saving_session (const vector<string>& actions)
 
 	prompt_label.set_text (prompt);
 	prompt_label.set_name (X_("PrompterLabel"));
-	prompt_label.set_alignment(ALIGN_START, ALIGN_START);
+	prompt_label.set_alignment(ALIGN_CENTER, ALIGN_CENTER);
+	prompt_label.set_justify (Gtk::JUSTIFY_CENTER);
 
 	dimage->set_alignment(ALIGN_CENTER, ALIGN_START);
 	dhbox.set_homogeneous (false);
 	dhbox.pack_start (*dimage, false, false, 5);
 	dhbox.pack_start (prompt_label, true, false, 5);
-	window.get_vbox()->pack_start (dhbox);
+	window.get_vbox()->pack_start (dhbox, true, true, 16);
 
 	window.set_name (_("Prompter"));
 	window.set_modal (true);
@@ -1247,6 +1248,8 @@ ARDOUR_UI::ask_about_saving_session (const vector<string>& actions)
 	/* in the middle of the screen, with large text and large buttons */
 	window.set_position (Gtk::WIN_POS_CENTER);
 	window.get_vbox()->set_border_width (16);
+	window.get_action_area()->set_border_width (24);
+	window.get_action_area()->set_layout (Gtk::BUTTONBOX_SPREAD);
 	dhbox.show();
 	prompt_label.show();
 	dimage->show();
