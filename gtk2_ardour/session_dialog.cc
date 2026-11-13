@@ -335,14 +335,14 @@ SessionDialog::SessionDialog (DialogTab initial_tab, const std::string& session_
 	rc.add_subdirectory_to_paths ("resources");
 
 	/* The two things the start window offers, besides the recent list */
-	new_button.set_text (string_compose ("%1    <span alpha=\"55%%\" size=\"smaller\">%2</span>", _("New session"), _("Ctrl+N")), true);
+	new_button.set_text (string_compose ("%1    <span alpha=\"55%%\" size=\"smaller\">%2</span>", _("New session"), string (Gtkmm2ext::Keyboard::primary_modifier_name ()) + "+N"), true);
 	new_button.set_name ("tab button");
 	new_button.set_alignment (0.0, 0.5);
 	new_button.set_corner_radius (6);
 	new_button.set_can_focus (true);
 	new_button.set_related_action (new_session_action);
 
-	existing_button.set_text (string_compose ("%1    <span alpha=\"55%%\" size=\"smaller\">%2</span>", _("Browse..."), _("Ctrl+O")), true);
+	existing_button.set_text (string_compose ("%1    <span alpha=\"55%%\" size=\"smaller\">%2</span>", _("Browse..."), string (Gtkmm2ext::Keyboard::primary_modifier_name ()) + "+O"), true);
 	existing_button.set_name ("tab button");
 	existing_button.set_alignment (0.0, 0.5);
 	existing_button.set_corner_radius (6);

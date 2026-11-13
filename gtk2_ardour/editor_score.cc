@@ -112,6 +112,22 @@ find_musescore ()
 			return p;
 		}
 	}
+	/* where each system's installer puts it */
+	static const char* places[] = {
+#if defined(__APPLE__)
+		"/Applications/MuseScore 4.app/Contents/MacOS/mscore",
+		"/Applications/MuseScore 3.app/Contents/MacOS/mscore",
+#elif defined(PLATFORM_WINDOWS)
+		"C:\\Program Files\\MuseScore 4\\bin\\MuseScore4.exe",
+		"C:\\Program Files\\MuseScore 3\\bin\\MuseScore3.exe",
+#endif
+		0
+	};
+	for (int i = 0; places[i]; ++i) {
+		if (Glib::file_test (places[i], Glib::FILE_TEST_IS_EXECUTABLE)) {
+			return places[i];
+		}
+	}
 	return string ();
 }
 

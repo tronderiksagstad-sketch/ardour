@@ -22,8 +22,10 @@
 #include <ctime>
 #include <set>
 
+#ifndef PLATFORM_WINDOWS
 #include <sys/wait.h>
 #include <unistd.h>
+#endif
 #include <pango/pangocairo.h>
 #include <glibmm/fileutils.h>
 #include <glibmm/markup.h>
@@ -36,6 +38,7 @@
 #include "pbd/xml++.h"
 #include "pbd/search_path.h"
 #include "pbd/openuri.h"
+#include "free_plugins_catalogue.h"
 #include <ytkmm/window.h>
 #include "pbd/file_utils.h"
 
@@ -427,6 +430,20 @@ led (Cr const& cr, double x, double y, double r, bool on)
 	cr->begin_new_sub_path ();
 	cr->arc (x, y, r, 0, 2 * M_PI);
 	cr->fill ();
+}
+
+/* "Ctrl+Z" is written for every system; each shows its own name for the
+ * primary key (Ctrl, or Cmd on a Mac) */
+static string
+keys_for_this_system (string s)
+{
+	const string own = string (Gtkmm2ext::Keyboard::primary_modifier_name ()) + "+";
+	string::size_type p = 0;
+	while ((p = s.find ("Ctrl+", p)) != string::npos) {
+		s.replace (p, 5, own);
+		p += own.size ();
+	}
+	return s;
 }
 
 /* the kept picture of a plugin's own window, loaded the first time it is needed */
@@ -1517,7 +1534,12 @@ PluginBrowser::capture_picture (Gtk::Window& window, std::string const& plugin_n
 		if (ww < 120 || hh < 60) {
 			return;
 		}
+#if defined(PLATFORM_WINDOWS) || defined(__APPLE__)
+		/* no X11 screen to take it from: the window's own contents */
+		GdkPixbuf* pb = gdk_pixbuf_get_from_drawable (NULL, GDK_DRAWABLE (w->get_window ()->gobj ()), NULL, 0, 0, 0, 0, ww, hh);
+#else
 		GdkPixbuf* pb = gdk_pixbuf_get_from_drawable (NULL, gdk_get_default_root_window (), NULL, x, y, 0, 0, ww, hh);
+#endif
 		if (!pb) {
 			return;
 		}
@@ -2399,7 +2421,7 @@ void
 PluginBrowser::set_foot (string const& text)
 {
 	if (!text.empty ()) {
-		_foot.set_text (text);
+		_foot.set_text (keys_for_this_system (text));
 		return;
 	}
 	std::shared_ptr<Route> r = _target.lock ();
@@ -2511,8 +2533,9 @@ PluginBrowser::update_chip ()
 }
 
 void
-PluginBrowser::rack_say (string const& text)
+PluginBrowser::rack_say (string const& text_in)
 {
+	const string text = keys_for_this_system (text_in);
 	_rack_note = text;
 	if (!text.empty ()) {
 		_rack_msg.set_text (text);
@@ -2522,7 +2545,7 @@ PluginBrowser::rack_say (string const& text)
 	std::shared_ptr<Route> r = _target.lock ();
 	if (r && r->nth_plugin (0)) {
 		_rack_msg.set_markup (string_compose ("<span foreground=\"#7d8590\">%1</span>",
-		                                      Gtkmm2ext::markup_escape_text (_("Double-click a unit to open it. Click to select it, Delete takes it off. Drag to change the order. Ctrl+Z undoes."))));
+		                                      Gtkmm2ext::markup_escape_text (keys_for_this_system (_("Double-click a unit to open it. Click to select it, Delete takes it off. Drag to change the order. Ctrl+Z undoes.")))));
 	} else {
 		_rack_msg.set_text ("");
 	}
@@ -3326,6 +3349,9 @@ PluginBrowser::update_free_button ()
 void
 PluginBrowser::get_free_plugins ()
 {
+#if defined(PLATFORM_WINDOWS) || defined(__APPLE__)
+	rack_say (_("Open a plugin's page from the list and install it from there."));
+#else
 	if (_free_watch.connected ()) {
 		return;
 	}
@@ -3381,59 +3407,87 @@ PluginBrowser::get_free_plugins ()
 			rack_say (text.empty () ? string (_("The plugins could not be installed.")) : text);
 		}
 	}, pid);
+#endif
 }
 
-/* Free plugins that have a Linux build, with where to get them. "match" is
- * what their name contains once installed. Links are the makers' own pages. */
+/* Free plugins with a way to get them, and the systems they exist for.
+ * "match" is what their name contains once installed. Links are the makers'
+ * own pages. The Windows and macOS freeware from Production Expert's list is
+ * in free_plugins_catalogue.cc and shown on those systems. */
+enum { OnLinux = 1, OnWindows = 2, OnMac = 4, OnAll = 7 };
+
+#if defined(PLATFORM_WINDOWS)
+static const int this_system = OnWindows;
+#elif defined(__APPLE__)
+static const int this_system = OnMac;
+#else
+static const int this_system = OnLinux;
+#endif
+
 struct ShelfItem {
 	const char* name;
 	const char* maker;
 	const char* what;
 	const char* match;
 	const char* url;
-	bool        packaged; ///< usually in the distribution's package list
+	bool        packaged; ///< usually in a Linux distribution's package list
+	int         systems;  ///< OnLinux | OnWindows | OnMac
 };
 
 static const ShelfItem shelf[] = {
-	{ "Surge XT", "Surge Synth Team", "A huge synth with thousands of presets. The best free synth.", "surge xt", "https://surge-synthesizer.github.io/", false },
-	{ "Vital", "Vital Audio", "Wavetable synth where you can see every movement of the sound. Needs a free account to download.", "vital", "https://vital.audio/", false },
-	{ "Dexed", "Digital Suburban", "FM synth in the style of the DX7: electric pianos and bells.", "dexed", "https://asb2m10.github.io/dexed/", false },
-	{ "Helm", "Matt Tytel", "A friendly synth, good for learning how synths work.", "helm", "https://tytel.org/helm/", false },
-	{ "ZynAddSubFX", "Mark McCurry", "A deep synth: rich pads, organs and bells.", "zynaddsubfx", "https://zynaddsubfx.sourceforge.io/", true },
-	{ "Dragonfly Reverb", "Michael Willis", "Hall, room and plate reverbs. Lush on vocals.", "dragonfly", "https://michaelwillis.github.io/dragonfly-reverb/", true },
-	{ "LSP Plugins", "LSP", "A big set of EQs, compressors, gates and meters.", "lsp ", "https://lsp-plug.in/", true },
-	{ "Calf Studio Gear", "Calf", "Reverb, delay, compressor, EQ and more, with clear displays.", "calf", "https://calf-studio-gear.org/", true },
-	{ "x42 Plugins", "Robin Gareus", "Clean, precise tools: parametric EQ, limiter, meters.", "x42", "https://x42-plugins.com/", true },
-	{ "Yoshimi", "Yoshimi Team", "A powerful synth, a cousin of ZynAddSubFX with its own sounds.", "yoshimi", "https://yoshimi.sourceforge.io/", true },
-	{ "amSynth", "Nick Dowell", "A simple, warm analogue-style synth.", "amsynth", "https://amsynth.github.io/", true },
-	{ "DrumGizmo", "DrumGizmo Team", "Recorded acoustic drum kits, each drum on its own channel.", "drumgizmo", "https://drumgizmo.org/", true },
-	{ "Zam Plugins", "Damien Zammit", "Compressors, EQ, delay and more for mixing.", "zam", "https://www.zamaudio.com/", true },
-	{ "Drum Locker", "Audio Assault", "A quick drum kit on a track. Says it runs on Windows, Mac or Linux.", "drum locker", "https://audioassault.mx/getdrumlocker", false },
-	{ "Graillon 3 Free", "Auburn Sounds", "Pitch correction for vocals, from natural to edgy.", "graillon", "https://www.auburnsounds.com/products/Graillon.html", false },
-	{ "Selene Free", "Auburn Sounds", "A versatile reverb with an adaptive, pristine sound.", "selene", "https://www.auburnsounds.com/products/Selene.html", false },
-	{ "Lens Free", "Auburn Sounds", "A spectral dynamics processor: multiband compression without crossovers.", "lens", "https://www.auburnsounds.com/products/Lens.html", false },
-	{ "Inner Pitch Free", "Auburn Sounds", "Pitch shifter with a very natural sound.", "inner pitch", "https://www.auburnsounds.com/products/InnerPitch.html", false },
-	{ "Couture Free", "Auburn Sounds", "A transient shaper: control over attacks and dynamics.", "couture", "https://www.auburnsounds.com/products/Couture.html", false },
-	{ "Renegate Free", "Auburn Sounds", "A smooth, natural-sounding gate.", "renegate", "https://www.auburnsounds.com/products/Renegate.html", false },
-	{ "Panagement Free", "Auburn Sounds", "A binaural panner for the stereo space.", "panagement", "https://www.auburnsounds.com/products/Panagement.html", false },
-	{ "Psypan 2 Free", "Auburn Sounds", "A stereo effect with 17 pan modes.", "psypan", "https://www.auburnsounds.com/products/Psypan.html", false },
-	{ "Amp Locker", "Audio Assault", "An all-in-one guitar amp setup. Has a Linux download.", "amp locker", "https://audioassault.mx/getamplocker", false },
-	{ "Mix Locker", "Audio Assault", "An all-in-one mix helper. Has a Linux download.", "mix locker", "https://audioassault.mx/getmixlocker", false },
-	{ "Zebralette", "u-he", "A friendly, free synth with a clear display. Linux version is beta.", "zebralette", "https://u-he.com/products/zebralette/", false },
-	{ "Podolski", "u-he", "A simple, punchy free synth. Linux version is beta.", "podolski", "https://u-he.com/products/podolski/", false },
-	{ "Decent Sampler", "Decent Samples", "Plays sample libraries, many of them free. Free Linux VST and VST3.", "decent sampler", "https://www.decentsamples.com/product/decent-sampler-plugin/", false },
-	{ "setBfree", "Robin Gareus", "A tonewheel organ with drawbars and a rotary speaker.", "setbfree", "https://setbfree.org/", true },
-	{ "MDA plugins", "Paul Kellett", "Classic small plugins: electric piano, vocoder, effects.", "mda ", "https://drobilla.net/software/mda-lv2", true },
-	{ "EQ10Q", "Pere Ràfols", "A flexible parametric equaliser with a clear curve.", "eq10q", "https://eq10q.sourceforge.net/", true },
-	{ "Guitarix", "Guitarix team", "Guitar amps and pedals.", "guitarix", "https://guitarix.org/", true },
-	{ "synthv1 / samplv1 / drumkv1", "Rui Nuno Capela", "A subtractive synth, a sampler and a drum sampler.", "synthv1", "https://synthv1.sourceforge.io/", true },
-	{ "AVL Drumkits", "x42", "Ready-to-play acoustic drum kits.", "avl drumkits", "https://x42-plugins.com/x42/x42-avldrums", true },
-	{ "DISTRHO plugins", "DISTRHO", "A set of small, well-made effects and synths.", "mverb", "https://distrho.github.io/DPF-Plugins/", true },
-	{ "KXStudio plugin repository", "KXStudio", "A package source for Debian with many more plugins (Cardinal, DISTRHO ports and others).", "kxstudio-never-matches", "https://kx.studio/Repositories:Plugins", false },
-	{ "Cardinal", "DISTRHO", "A modular synth: patch modules together with virtual cables.", "cardinal", "https://cardinal.kx.studio/", false },
-	{ "ChowDSP plugins", "Chowdhury DSP", "Tape machine, phaser, kick and more, with real character.", "chow", "https://chowdsp.com/", false },
-	{ "Airwindows", "Airwindows", "Hundreds of small, well-loved effects.", "airwindows", "https://www.airwindows.com/", false },
+	{ "Surge XT", "Surge Synth Team", "A huge synth with thousands of presets. The best free synth.", "surge xt", "https://surge-synthesizer.github.io/", false, OnAll },
+	{ "Vital", "Vital Audio", "Wavetable synth where you can see every movement of the sound. Needs a free account to download.", "vital", "https://vital.audio/", false, OnAll },
+	{ "Dexed", "Digital Suburban", "FM synth in the style of the DX7: electric pianos and bells.", "dexed", "https://asb2m10.github.io/dexed/", false, OnAll },
+	{ "Helm", "Matt Tytel", "A friendly synth, good for learning how synths work.", "helm", "https://tytel.org/helm/", false, OnAll },
+	{ "ZynAddSubFX", "Mark McCurry", "A deep synth: rich pads, organs and bells.", "zynaddsubfx", "https://zynaddsubfx.sourceforge.io/", true, OnAll },
+	{ "Dragonfly Reverb", "Michael Willis", "Hall, room and plate reverbs. Lush on vocals.", "dragonfly", "https://michaelwillis.github.io/dragonfly-reverb/", true, OnAll },
+	{ "LSP Plugins", "LSP", "A big set of EQs, compressors, gates and meters.", "lsp ", "https://lsp-plug.in/", true, OnAll },
+	{ "Calf Studio Gear", "Calf", "Reverb, delay, compressor, EQ and more, with clear displays.", "calf", "https://calf-studio-gear.org/", true, OnLinux },
+	{ "x42 Plugins", "Robin Gareus", "Clean, precise tools: parametric EQ, limiter, meters.", "x42", "https://x42-plugins.com/", true, OnAll },
+	{ "Yoshimi", "Yoshimi Team", "A powerful synth, a cousin of ZynAddSubFX with its own sounds.", "yoshimi", "https://yoshimi.sourceforge.io/", true, OnLinux },
+	{ "amSynth", "Nick Dowell", "A simple, warm analogue-style synth.", "amsynth", "https://amsynth.github.io/", true, OnLinux },
+	{ "DrumGizmo", "DrumGizmo Team", "Recorded acoustic drum kits, each drum on its own channel.", "drumgizmo", "https://drumgizmo.org/", true, OnAll },
+	{ "Zam Plugins", "Damien Zammit", "Compressors, EQ, delay and more for mixing.", "zam", "https://www.zamaudio.com/", true, OnLinux },
+	{ "Drum Locker", "Audio Assault", "A quick drum kit on a track. Says it runs on Windows, Mac or Linux.", "drum locker", "https://audioassault.mx/getdrumlocker", false, OnAll },
+	{ "Graillon 3 Free", "Auburn Sounds", "Pitch correction for vocals, from natural to edgy.", "graillon", "https://www.auburnsounds.com/products/Graillon.html", false, OnAll },
+	{ "Selene Free", "Auburn Sounds", "A versatile reverb with an adaptive, pristine sound.", "selene", "https://www.auburnsounds.com/products/Selene.html", false, OnAll },
+	{ "Lens Free", "Auburn Sounds", "A spectral dynamics processor: multiband compression without crossovers.", "lens", "https://www.auburnsounds.com/products/Lens.html", false, OnAll },
+	{ "Inner Pitch Free", "Auburn Sounds", "Pitch shifter with a very natural sound.", "inner pitch", "https://www.auburnsounds.com/products/InnerPitch.html", false, OnAll },
+	{ "Couture Free", "Auburn Sounds", "A transient shaper: control over attacks and dynamics.", "couture", "https://www.auburnsounds.com/products/Couture.html", false, OnAll },
+	{ "Renegate Free", "Auburn Sounds", "A smooth, natural-sounding gate.", "renegate", "https://www.auburnsounds.com/products/Renegate.html", false, OnAll },
+	{ "Panagement Free", "Auburn Sounds", "A binaural panner for the stereo space.", "panagement", "https://www.auburnsounds.com/products/Panagement.html", false, OnAll },
+	{ "Psypan 2 Free", "Auburn Sounds", "A stereo effect with 17 pan modes.", "psypan", "https://www.auburnsounds.com/products/Psypan.html", false, OnAll },
+	{ "Amp Locker", "Audio Assault", "An all-in-one guitar amp setup. Has a Linux download.", "amp locker", "https://audioassault.mx/getamplocker", false, OnAll },
+	{ "Mix Locker", "Audio Assault", "An all-in-one mix helper. Has a Linux download.", "mix locker", "https://audioassault.mx/getmixlocker", false, OnAll },
+	{ "Zebralette", "u-he", "A friendly, free synth with a clear display. Linux version is beta.", "zebralette", "https://u-he.com/products/zebralette/", false, OnAll },
+	{ "Podolski", "u-he", "A simple, punchy free synth. Linux version is beta.", "podolski", "https://u-he.com/products/podolski/", false, OnAll },
+	{ "Decent Sampler", "Decent Samples", "Plays sample libraries, many of them free. Free Linux VST and VST3.", "decent sampler", "https://www.decentsamples.com/product/decent-sampler-plugin/", false, OnAll },
+	{ "setBfree", "Robin Gareus", "A tonewheel organ with drawbars and a rotary speaker.", "setbfree", "https://setbfree.org/", true, OnLinux },
+	{ "MDA plugins", "Paul Kellett", "Classic small plugins: electric piano, vocoder, effects.", "mda ", "https://drobilla.net/software/mda-lv2", true, OnLinux },
+	{ "EQ10Q", "Pere Ràfols", "A flexible parametric equaliser with a clear curve.", "eq10q", "https://eq10q.sourceforge.net/", true, OnLinux },
+	{ "Guitarix", "Guitarix team", "Guitar amps and pedals.", "guitarix", "https://guitarix.org/", true, OnLinux },
+	{ "synthv1 / samplv1 / drumkv1", "Rui Nuno Capela", "A subtractive synth, a sampler and a drum sampler.", "synthv1", "https://synthv1.sourceforge.io/", true, OnLinux },
+	{ "AVL Drumkits", "x42", "Ready-to-play acoustic drum kits.", "avl drumkits", "https://x42-plugins.com/x42/x42-avldrums", true, OnLinux },
+	{ "DISTRHO plugins", "DISTRHO", "A set of small, well-made effects and synths.", "mverb", "https://distrho.github.io/DPF-Plugins/", true, OnLinux },
+	{ "KXStudio plugin repository", "KXStudio", "A package source for Debian with many more plugins (Cardinal, DISTRHO ports and others).", "kxstudio-never-matches", "https://kx.studio/Repositories:Plugins", false, OnLinux },
+	{ "Cardinal", "DISTRHO", "A modular synth: patch modules together with virtual cables.", "cardinal", "https://cardinal.kx.studio/", false, OnAll },
+	{ "ChowDSP plugins", "Chowdhury DSP", "Tape machine, phaser, kick and more, with real character.", "chow", "https://chowdsp.com/", false, OnAll },
+	{ "Airwindows", "Airwindows", "Hundreds of small, well-loved effects.", "airwindows", "https://www.airwindows.com/", false, OnAll },
 };
+
+/* what the name of a catalogue entry contains once it is installed */
+static string
+shelf_match_name (string n)
+{
+	n = lower (n);
+	for (const char* suffix : { " free edition", " free", " lite", " basic" }) {
+		const size_t k = strlen (suffix);
+		if (n.size () > k && n.compare (n.size () - k, k, suffix) == 0) {
+			n.erase (n.size () - k);
+		}
+	}
+	return n;
+}
 
 void
 PluginBrowser::open_shelf ()
@@ -3446,71 +3500,127 @@ PluginBrowser::open_shelf ()
 	w->set_title (_("Free plugins"));
 	w->set_transient_for (*this);
 	w->set_position (Gtk::WIN_POS_CENTER_ON_PARENT);
-	w->set_default_size (px (640), px (560));
+	w->set_default_size (px (680), px (620));
 	w->signal_hide ().connect ([w] () { Glib::signal_idle ().connect_once ([w] () { delete w; }); });
 	bg (*w, "#1a1d22");
 
+	/* what is on the shelf for this system: the picked ones, then the longer list */
+	struct Row {
+		string name, maker, what, match, url;
+		bool   curated;
+	};
+	std::shared_ptr<vector<Row> > all (new vector<Row>);
+	std::set<string> have_names;
+	for (ShelfItem const& it : shelf) {
+		if (it.systems & this_system) {
+			Row r = { it.name, it.maker, it.what, it.match, it.url, true };
+			all->push_back (r);
+			have_names.insert (lower (it.name));
+		}
+	}
+	if (this_system != OnLinux) {
+		for (const FreePluginListing* f = free_plugin_catalogue; f->name; ++f) {
+			if (have_names.count (lower (f->name))) { continue; }
+			Row r = { f->name, f->maker, f->kind, shelf_match_name (f->name), f->url, false };
+			all->push_back (r);
+		}
+	}
+
 	Gtk::VBox* col = manage (new Gtk::VBox (false, px (8)));
 	col->set_border_width (px (16));
-
 	Gtk::Label* head = manage (new Gtk::Label);
 	head->set_markup (string_compose ("<span size=\"x-large\" weight=\"bold\">%1</span>", _("Free plugins")));
 	grey (*head, "#e6e8eb");
-	Gtk::Label* sub = manage (new Gtk::Label (_("Free, with a Linux build. Install the ones your system offers in one click, or open the maker's page.")));
+	Gtk::Label* sub = manage (new Gtk::Label (this_system == OnLinux
+	                                           ? _("Free, with a Linux build. Install the ones your system offers in one click, or open the maker's page.")
+	                                           : _("Free to download from the makers. Click \"Open page\" to get one; it shows as installed once you have it.")));
 	sub->set_line_wrap (true);
 	sub->set_justify (Gtk::JUSTIFY_CENTER);
 	grey (*sub, "#9aa1ac");
 	col->pack_start (*head, false, false);
 	col->pack_start (*sub, false, false);
 
-	ArdourWidgets::ArdourButton* all = manage (new ArdourWidgets::ArdourButton (_("Install all that my system offers")));
-	all->set_name ("generic button");
-	all->set_size_request (-1, px (36));
-	all->signal_clicked.connect ([this, w] () { get_free_plugins (); w->hide (); });
-	Gtk::Alignment* all_c = manage (new Gtk::Alignment (0.5, 0.5, 0, 0));
-	all_c->add (*all);
-	col->pack_start (*all_c, false, false, px (6));
+#if !defined(PLATFORM_WINDOWS) && !defined(__APPLE__)
+	{
+		ArdourWidgets::ArdourButton* ab = manage (new ArdourWidgets::ArdourButton (_("Install all that my system offers")));
+		ab->set_name ("generic button");
+		ab->set_size_request (-1, px (36));
+		ab->signal_clicked.connect ([this, w] () { get_free_plugins (); w->hide (); });
+		Gtk::Alignment* ac = manage (new Gtk::Alignment (0.5, 0.5, 0, 0));
+		ac->add (*ab);
+		col->pack_start (*ac, false, false, px (6));
+	}
+#endif
+
+	Gtk::Entry* find = manage (new Gtk::Entry);
+	find->set_alignment (0.5);
+	find->set_width_chars (30);
+	Gtk::Alignment* find_c = manage (new Gtk::Alignment (0.5, 0.5, 0, 0));
+	find_c->add (*find);
+	col->pack_start (*find_c, false, false);
 
 	Gtk::VBox* rows = manage (new Gtk::VBox (false, px (6)));
-	for (ShelfItem const& it : shelf) {
-		bool have = false;
-		for (Entry const& e : _entries) {
-			have = have || e.lname.find (it.match) != string::npos;
-		}
-		Gtk::VBox* text = manage (new Gtk::VBox (false, px (2)));
-		Gtk::Label* n = manage (new Gtk::Label);
-		n->set_markup (string_compose ("<b>%1</b>  <span foreground=\"#8b93a0\" size=\"small\">%2</span>", Gtkmm2ext::markup_escape_text (it.name), Gtkmm2ext::markup_escape_text (it.maker)));
-		n->set_alignment (0, 0.5);
-		grey (*n, "#e6e8eb");
-		Gtk::Label* d = manage (new Gtk::Label (it.what));
-		d->set_alignment (0, 0.5);
-		d->set_line_wrap (true);
-		grey (*d, "#9aa1ac");
-		text->pack_start (*n, false, false);
-		text->pack_start (*d, false, false);
-
-		ArdourWidgets::ArdourButton* b = manage (new ArdourWidgets::ArdourButton (have ? string (_("Installed")) : string (_("Open page"))));
-		b->set_name ("generic button");
-		b->set_size_request (px (110), px (30));
-		if (have) {
-			b->set_sensitive (false);
-		} else {
-			const string url = it.url;
-			b->signal_clicked.connect ([url] () { PBD::open_uri (url.c_str ()); });
-		}
-		Gtk::HBox* row = manage (new Gtk::HBox (false, px (12)));
-		row->set_border_width (px (8));
-		row->pack_start (*text, true, true);
-		row->pack_start (*b, false, false);
-		Gtk::EventBox* eb = manage (new Gtk::EventBox);
-		eb->add (*row);
-		bg (*eb, "#16181c");
-		rows->pack_start (*eb, false, false);
-	}
+	Gtk::Label* more = manage (new Gtk::Label);
+	grey (*more, "#7d8590");
 	Gtk::ScrolledWindow* sc = manage (new Gtk::ScrolledWindow);
 	sc->set_policy (Gtk::POLICY_NEVER, Gtk::POLICY_AUTOMATIC);
 	sc->add (*rows);
 	col->pack_start (*sc, true, true);
+	col->pack_start (*more, false, false);
+
+	/* shows the rows that fit what was typed (at most 60 at a time) */
+	std::vector<string> names_have;
+	for (Entry const& e : _entries) { names_have.push_back (e.lname); }
+	auto fill = [this, rows, more, all, names_have, px, grey, bg] (string const& typed) {
+		Glib::ListHandle<Gtk::Widget*> kids = rows->get_children ();
+		for (Gtk::Widget* k : kids) { rows->remove (*k); delete k; }
+		const string q = lower (typed);
+		size_t shown = 0, matching = 0;
+		for (Row const& r : *all) {
+			if (!q.empty () && lower (r.name).find (q) == string::npos && lower (r.maker).find (q) == string::npos && lower (r.what).find (q) == string::npos) {
+				continue;
+			}
+			++matching;
+			if (shown >= 60) { continue; }
+			++shown;
+			bool have = false;
+			for (string const& n : names_have) { have = have || n.find (r.match) != string::npos; }
+			Gtk::VBox* text = manage (new Gtk::VBox (false, px (2)));
+			Gtk::Label* n = manage (new Gtk::Label);
+			n->set_markup (string_compose ("<b>%1</b>  <span foreground=\"#8b93a0\" size=\"small\">%2</span>", Gtkmm2ext::markup_escape_text (r.name), Gtkmm2ext::markup_escape_text (r.maker)));
+			n->set_alignment (0, 0.5);
+			grey (*n, "#e6e8eb");
+			n->set_ellipsize (Pango::ELLIPSIZE_END);
+			Gtk::Label* d = manage (new Gtk::Label (r.what));
+			d->set_alignment (0, 0.5);
+			d->set_line_wrap (true);
+			grey (*d, "#9aa1ac");
+			text->pack_start (*n, false, false);
+			text->pack_start (*d, false, false);
+			ArdourWidgets::ArdourButton* b = manage (new ArdourWidgets::ArdourButton (have ? string (_("Installed")) : string (_("Open page"))));
+			b->set_name ("generic button");
+			b->set_size_request (px (110), px (30));
+			if (have) {
+				b->set_sensitive (false);
+			} else {
+				const string url = r.url;
+				b->signal_clicked.connect ([url] () { PBD::open_uri (url.c_str ()); });
+			}
+			Gtk::HBox* row = manage (new Gtk::HBox (false, px (12)));
+			row->set_border_width (px (8));
+			row->pack_start (*text, true, true);
+			row->pack_start (*b, false, false);
+			Gtk::EventBox* eb = manage (new Gtk::EventBox);
+			eb->add (*row);
+			bg (*eb, "#16181c");
+			rows->pack_start (*eb, false, false);
+		}
+		more->set_text (matching > shown ? string_compose (_("%1 more. Type a name, a maker or a kind to narrow down."), matching - shown)
+		                                 : (matching == 0 ? string (_("Nothing matches.")) : string ()));
+		rows->show_all ();
+	};
+	find->signal_changed ().connect ([find, fill] () { fill (find->get_text ()); });
+	fill ("");
 	w->add (*col);
 	w->show_all ();
 }

@@ -29,6 +29,7 @@
 #include "gtkmm2ext/actions.h"
 #include "gtkmm2ext/activatable.h"
 #include "gtkmm2ext/bindings.h"
+#include "gtkmm2ext/keyboard.h"
 #include "gtkmm2ext/utils.h"
 
 #include "quick_help.h"
@@ -124,9 +125,23 @@ QuickHelp::set (Gtk::Widget& w, const char* title, const char* text)
 	g_object_set_data (G_OBJECT (w.gobj ()), "quick-help-text", (gpointer) text);
 }
 
-void
-QuickHelp::show_help (string const& title, string const& text, string const& key)
+/* "Ctrl+Z" is written for every system; a Mac shows Cmd */
+static string
+own_keys (string s)
 {
+	const string own = string (Gtkmm2ext::Keyboard::primary_modifier_name ()) + "+";
+	string::size_type p = 0;
+	while ((p = s.find ("Ctrl+", p)) != string::npos) {
+		s.replace (p, 5, own);
+		p += own.size ();
+	}
+	return s;
+}
+
+void
+QuickHelp::show_help (string const& title_in, string const& text_in, string const& key_in)
+{
+	const string title = own_keys (title_in), text = own_keys (text_in), key = own_keys (key_in);
 	const string all = title + '\n' + text + '\n' + key;
 	if (all == _shown) {
 		return;

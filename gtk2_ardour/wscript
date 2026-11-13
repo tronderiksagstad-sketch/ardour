@@ -103,6 +103,7 @@ gtk2_ardour_sources = [
         'editor_mixer.cc',
         'command_palette.cc',
         'text_match.cc',
+        'free_plugins_catalogue.cc',
         'plugin_kinds.cc',
         'simple_smf.cc',
         'warp_map.cc',

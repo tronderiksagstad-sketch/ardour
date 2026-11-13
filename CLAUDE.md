@@ -21,6 +21,15 @@ Working branch: `memlock-fix-and-theme`.
 - Within a section, stack things on top of each other and centre them (a title above its content, not beside it).
 - Rows in a list the user scans stay left-aligned inside the row; the list itself is centred.
 
+## Platforms
+
+Ardour runs on Linux, Windows and macOS, and this fork must too.
+
+- Write every addition to work on all three. Guard POSIX-only code (`sys/wait.h`, `apt`, `pkexec`, X11 screen grabs) with `PLATFORM_WINDOWS` / `__APPLE__`, and give each a sensible fallback.
+- Write shortcuts as "Ctrl+Z" in text; show them through the system's own primary-key name (`Keyboard::primary_modifier_name ()`).
+- The free-plugin shelf (`plugin_browser.cc`) shows each system its own plugins: Linux the ones with Linux builds (and the `apt` installer), Windows and macOS the longer list in `free_plugins_catalogue.cc`.
+- Only Linux builds are tested during development. Windows and macOS builds are tried at the end.
+
 ## Workflow
 
 - Mockups live on the "Ardour Redesign" design canvas (claude.ai artifact P4iXDk1Sf91eiqX8BgmCu7); agree the design there before changing code.
