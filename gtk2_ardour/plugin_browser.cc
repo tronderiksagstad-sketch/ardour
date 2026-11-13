@@ -1566,7 +1566,7 @@ PluginBrowser::PluginBrowser ()
 	set_title (_("Add plugin"));
 	set_decorated (false);
 	set_skip_taskbar_hint (true);
-	set_type_hint (Gdk::WINDOW_TYPE_HINT_DIALOG);
+	set_type_hint (Gdk::WINDOW_TYPE_HINT_UTILITY); /* a floating window */
 	set_transient_for (ARDOUR_UI::instance ()->main_window ());
 	set_border_width (1);
 
@@ -1924,7 +1924,7 @@ PluginBrowser::PluginBrowser ()
 		Gdk::Rectangle r;
 		Glib::RefPtr<Gdk::Screen> sc = Gdk::Screen::get_default ();
 		const int sw = sc->get_width (), sh = sc->get_height ();
-		set_default_size (std::min (px (1340), sw - 40), std::min (px (800), sh - 60));
+		set_default_size (std::min (px (1325), sw - 40), std::min (px (785), sh - 60));
 	}
 }
 

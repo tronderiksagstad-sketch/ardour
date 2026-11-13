@@ -123,6 +123,7 @@ This mode provides many different operations on both regions and control points,
 @edit|Editor/play-from-edit-point-and-return|    <@PRIMARY@><@TERTIARY@>space|play from EP \& return
 @trans|Transport/ToggleRollMaybe|               <@PRIMARY@><@SECONDARY@>space|stop (keep loop/range play)
 @trans|Transport/ToggleRollForgetCapture|  <@PRIMARY@><@SECONDARY@><@TERTIARY@>space|stop and destroy
+@edit|Editor/add-plugin|                                    <@PRIMARY@><@TERTIARY@>p|open the plugin browser
 @sess|Common/command-palette|                               <@PRIMARY@>space|search commands, tracks, markers, plugins
 @trans|Transport/record-roll|                               <@TERTIARY@>space|start recording
 
