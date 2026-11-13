@@ -12,17 +12,19 @@ if [ "$(id -u)" -ne 0 ] || [ -z "$PKEXEC_UID" ]; then
 	exit 2
 fi
 
-# Debian package names. Names a system does not have are skipped.
-#  synths:   Surge XT, Dexed (FM), Helm, ZynAddSubFX
-#  effects:  Dragonfly Reverb, LSP Plugins, Calf, x42
+# Debian package names (all checked against Debian 13 "trixie"). Names a
+# system does not have are skipped. Surge XT, Dexed and Helm are not in
+# Debian 13 under any name; the plugin browser links to their own pages.
+#  synths:   ZynAddSubFX, Yoshimi, amSynth, DrumGizmo (drums)
+#  effects:  Dragonfly Reverb, LSP Plugins, Calf, x42, Zam Plugins
 PACKAGES="
 surge-xt surge-xt-lv2 surge-xt-vst3 surge-xt-clap
-dexed helm helm-synth
-zynaddsubfx zynaddsubfx-lv2
-dragonfly-reverb-lv2 dragonfly-reverb-vst3
+zynaddsubfx zynaddsubfx-lv2 yoshimi amsynth drumgizmo
+dragonfly-reverb-lv2 dragonfly-reverb-vst3 dragonfly-reverb-clap
 lsp-plugins-lv2 lsp-plugins-vst3
 calf-plugins
 x42-plugins
+zam-plugins
 "
 
 export DEBIAN_FRONTEND=noninteractive
