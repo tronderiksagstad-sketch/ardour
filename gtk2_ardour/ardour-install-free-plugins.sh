@@ -16,7 +16,8 @@ fi
 # system does not have are skipped. Surge XT, Dexed and Helm are not in
 # Debian 13 under any name; the plugin browser links to their own pages.
 #  synths:   ZynAddSubFX, Yoshimi, amSynth, DrumGizmo (drums)
-#  effects:  Dragonfly Reverb, LSP Plugins, Calf, x42, Zam Plugins
+#  effects:  Dragonfly Reverb, LSP Plugins, Calf, x42, Zam Plugins, DISTRHO, MDA,
+#            EQ10Q, CAPS, SWH, Invada, abGate, Guitarix, Rubber Band; organ: setBfree
 PACKAGES="
 surge-xt surge-xt-lv2 surge-xt-vst3 surge-xt-clap
 zynaddsubfx zynaddsubfx-lv2 yoshimi amsynth drumgizmo
@@ -25,6 +26,11 @@ lsp-plugins-lv2 lsp-plugins-vst3
 calf-plugins
 x42-plugins
 zam-plugins
+dpf-plugins-lv2 dpf-plugins-vst3 dpf-plugins-clap
+mda-lv2 eq10q fomp caps abgate rubberband-lv2
+setbfree guitarix-lv2 swh-lv2 invada-studio-plugins-lv2
+avldrums.lv2 padthv1 samplv1 synthv1 drumkv1
+lsp-plugins-clap
 "
 
 export DEBIAN_FRONTEND=noninteractive
