@@ -1,7 +1,9 @@
 # Project notes for Claude
 
 This is a personal fork of Ardour being redesigned for ease of use.
-Working branch: `memlock-fix-and-theme`.
+Working branch: `linux-only`.
+
+This is the **Linux-only** line. The three-platform line (Windows, macOS, Linux) is kept on the branch `three-platform`; go back there to continue it.
 
 ## Design philosophy (from the project owner — apply to every change)
 
@@ -20,6 +22,10 @@ Working branch: `memlock-fix-and-theme`.
 - A search bar is narrow and centred over the middle section, not stretched across the window.
 - Within a section, stack things on top of each other and centre them (a title above its content, not beside it).
 - Rows in a list the user scans stay left-aligned inside the row; the list itself is centred.
+
+## Platforms
+
+This branch targets **Linux only** (Debian first). Do not spend effort on Windows or macOS here: no `PLATFORM_WINDOWS` / `__APPLE__` guards, no per-system catalogues or shortcut names. Linux-specific things (apt, pkexec, X11) are fine.
 
 ## Workflow
 
