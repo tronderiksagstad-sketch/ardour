@@ -307,6 +307,7 @@ private:
 	void open_manager ();
 	void update_free_button ();
 	void get_free_plugins ();
+	void open_shelf ();
 	void list_scrolled ();
 	std::string tile_tip (int filter) const;
 

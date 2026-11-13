@@ -35,6 +35,8 @@
 
 #include "pbd/xml++.h"
 #include "pbd/search_path.h"
+#include "pbd/openuri.h"
+#include <ytkmm/window.h>
 #include "pbd/file_utils.h"
 
 #include "ardour/audioengine.h"
@@ -1592,9 +1594,9 @@ PluginBrowser::PluginBrowser ()
 	left->set_border_width (px (14));
 	left->pack_start (_tiles, false, false);
 	_get_free.set_name ("generic button");
-	_get_free.set_text (_("Get free plugins"));
+	_get_free.set_text (_("Free plugins…"));
 	_get_free.set_size_request (-1, px (34));
-	_get_free.signal_clicked.connect (sigc::mem_fun (*this, &PluginBrowser::get_free_plugins));
+	_get_free.signal_clicked.connect (sigc::mem_fun (*this, &PluginBrowser::open_shelf));
 	left->pack_end (_manage, false, false);
 	left->pack_end (_get_free, false, false);
 	Gtk::EventBox* left_box = manage (new Gtk::EventBox);
@@ -3209,11 +3211,8 @@ PluginBrowser::update_free_button ()
 			missing.push_back (string (want) == "lsp " ? "LSP" : want);
 		}
 	}
-	if (missing.empty ()) {
-		_get_free.hide ();
-		return;
-	}
 	_get_free.show ();
+	_get_free.set_text (missing.empty () ? string (_("Free plugins…")) : string_compose (_("Free plugins… (%1 to get)"), missing.size ()));
 }
 
 /* Install the recommended free plugins from the system's package list. The
@@ -3277,6 +3276,112 @@ PluginBrowser::get_free_plugins ()
 			rack_say (text.empty () ? string (_("The plugins could not be installed.")) : text);
 		}
 	}, pid);
+}
+
+/* Free plugins that have a Linux build, with where to get them. "match" is
+ * what their name contains once installed. Links are the makers' own pages. */
+struct ShelfItem {
+	const char* name;
+	const char* maker;
+	const char* what;
+	const char* match;
+	const char* url;
+	bool        packaged; ///< usually in the distribution's package list
+};
+
+static const ShelfItem shelf[] = {
+	{ "Surge XT", "Surge Synth Team", "A huge synth with thousands of presets. The best free synth.", "surge xt", "https://surge-synthesizer.github.io/", false },
+	{ "Vital", "Vital Audio", "Wavetable synth where you can see every movement of the sound. Needs a free account to download.", "vital", "https://vital.audio/", false },
+	{ "Dexed", "Digital Suburban", "FM synth in the style of the DX7: electric pianos and bells.", "dexed", "https://asb2m10.github.io/dexed/", false },
+	{ "Helm", "Matt Tytel", "A friendly synth, good for learning how synths work.", "helm", "https://tytel.org/helm/", false },
+	{ "ZynAddSubFX", "Mark McCurry", "A deep synth: rich pads, organs and bells.", "zynaddsubfx", "https://zynaddsubfx.sourceforge.io/", true },
+	{ "Dragonfly Reverb", "Michael Willis", "Hall, room and plate reverbs. Lush on vocals.", "dragonfly", "https://michaelwillis.github.io/dragonfly-reverb/", true },
+	{ "LSP Plugins", "LSP", "A big set of EQs, compressors, gates and meters.", "lsp ", "https://lsp-plug.in/", true },
+	{ "Calf Studio Gear", "Calf", "Reverb, delay, compressor, EQ and more, with clear displays.", "calf", "https://calf-studio-gear.org/", true },
+	{ "x42 Plugins", "Robin Gareus", "Clean, precise tools: parametric EQ, limiter, meters.", "x42", "https://x42-plugins.com/", true },
+	{ "Cardinal", "DISTRHO", "A modular synth: patch modules together with virtual cables.", "cardinal", "https://cardinal.kx.studio/", false },
+	{ "ChowDSP plugins", "Chowdhury DSP", "Tape machine, phaser, kick and more, with real character.", "chow", "https://chowdsp.com/", false },
+	{ "Airwindows", "Airwindows", "Hundreds of small, well-loved effects.", "airwindows", "https://www.airwindows.com/", false },
+};
+
+void
+PluginBrowser::open_shelf ()
+{
+	const float scale = UIConfiguration::instance ().get_ui_scale ();
+	auto px   = [scale] (double v) { return (int) rintf (v * scale); };
+	auto grey = [] (Gtk::Widget& x, const char* c) { x.modify_fg (Gtk::STATE_NORMAL, Gdk::Color (c)); };
+	auto bg   = [] (Gtk::Widget& x, const char* c) { x.modify_bg (Gtk::STATE_NORMAL, Gdk::Color (c)); };
+	Gtk::Window* w = new Gtk::Window;
+	w->set_title (_("Free plugins"));
+	w->set_transient_for (*this);
+	w->set_position (Gtk::WIN_POS_CENTER_ON_PARENT);
+	w->set_default_size (px (640), px (560));
+	w->signal_hide ().connect ([w] () { Glib::signal_idle ().connect_once ([w] () { delete w; }); });
+	bg (*w, "#1a1d22");
+
+	Gtk::VBox* col = manage (new Gtk::VBox (false, px (8)));
+	col->set_border_width (px (16));
+
+	Gtk::Label* head = manage (new Gtk::Label);
+	head->set_markup (string_compose ("<span size=\"x-large\" weight=\"bold\">%1</span>", _("Free plugins")));
+	grey (*head, "#e6e8eb");
+	Gtk::Label* sub = manage (new Gtk::Label (_("Free, with a Linux build. Install the ones your system offers in one click, or open the maker's page.")));
+	sub->set_line_wrap (true);
+	sub->set_justify (Gtk::JUSTIFY_CENTER);
+	grey (*sub, "#9aa1ac");
+	col->pack_start (*head, false, false);
+	col->pack_start (*sub, false, false);
+
+	ArdourWidgets::ArdourButton* all = manage (new ArdourWidgets::ArdourButton (_("Install all that my system offers")));
+	all->set_name ("generic button");
+	all->set_size_request (-1, px (36));
+	all->signal_clicked.connect ([this, w] () { get_free_plugins (); w->hide (); });
+	Gtk::Alignment* all_c = manage (new Gtk::Alignment (0.5, 0.5, 0, 0));
+	all_c->add (*all);
+	col->pack_start (*all_c, false, false, px (6));
+
+	Gtk::VBox* rows = manage (new Gtk::VBox (false, px (6)));
+	for (ShelfItem const& it : shelf) {
+		bool have = false;
+		for (Entry const& e : _entries) {
+			have = have || e.lname.find (it.match) != string::npos;
+		}
+		Gtk::VBox* text = manage (new Gtk::VBox (false, px (2)));
+		Gtk::Label* n = manage (new Gtk::Label);
+		n->set_markup (string_compose ("<b>%1</b>  <span foreground=\"#8b93a0\" size=\"small\">%2</span>", Gtkmm2ext::markup_escape_text (it.name), Gtkmm2ext::markup_escape_text (it.maker)));
+		n->set_alignment (0, 0.5);
+		grey (*n, "#e6e8eb");
+		Gtk::Label* d = manage (new Gtk::Label (it.what));
+		d->set_alignment (0, 0.5);
+		d->set_line_wrap (true);
+		grey (*d, "#9aa1ac");
+		text->pack_start (*n, false, false);
+		text->pack_start (*d, false, false);
+
+		ArdourWidgets::ArdourButton* b = manage (new ArdourWidgets::ArdourButton (have ? string (_("Installed")) : string (_("Open page"))));
+		b->set_name ("generic button");
+		b->set_size_request (px (110), px (30));
+		if (have) {
+			b->set_sensitive (false);
+		} else {
+			const string url = it.url;
+			b->signal_clicked.connect ([url] () { PBD::open_uri (url.c_str ()); });
+		}
+		Gtk::HBox* row = manage (new Gtk::HBox (false, px (12)));
+		row->set_border_width (px (8));
+		row->pack_start (*text, true, true);
+		row->pack_start (*b, false, false);
+		Gtk::EventBox* eb = manage (new Gtk::EventBox);
+		eb->add (*row);
+		bg (*eb, "#16181c");
+		rows->pack_start (*eb, false, false);
+	}
+	Gtk::ScrolledWindow* sc = manage (new Gtk::ScrolledWindow);
+	sc->set_policy (Gtk::POLICY_NEVER, Gtk::POLICY_AUTOMATIC);
+	sc->add (*rows);
+	col->pack_start (*sc, true, true);
+	w->add (*col);
+	w->show_all ();
 }
 
 void
