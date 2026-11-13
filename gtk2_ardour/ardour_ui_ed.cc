@@ -861,6 +861,22 @@ tidy_menu (Gtk::Menu* menu, std::set<Gtk::Widget*>* left_out)
 		}
 	}
 
+	/* nothing usable at all (no region selected, say): show the whole menu, greyed,
+	 * so that it is clear what could be done once there is something to work on */
+	bool any_usable = false;
+	for (Gtk::Widget* w : kids) {
+		if (!dynamic_cast<Gtk::SeparatorMenuItem*> (w) && w->get_visible ()) {
+			any_usable = true;
+		}
+	}
+	if (!any_usable) {
+		for (Gtk::Widget* w : *left_out) {
+			w->show ();
+		}
+		left_out->clear ();
+		return;
+	}
+
 	bool        have_item = false;
 	Gtk::Widget* pending  = 0;
 	for (Gtk::Widget* w : kids) {
@@ -890,10 +906,13 @@ ARDOUR_UI::build_menu_bar ()
 	menu_bar = dynamic_cast<MenuBar*> (ActionManager::get_widget (X_("/Main")));
 	menu_bar->set_name ("MainMenuBar");
 
-	if (Gtk::MenuItem* edit_item = dynamic_cast<Gtk::MenuItem*> (ActionManager::get_widget (X_("/ui/Main/Edit")))) {
-		if (Gtk::Menu* edit_menu = edit_item->get_submenu ()) {
-			static std::set<Gtk::Widget*> left_out;
-			edit_menu->signal_show ().connect ([edit_menu] () { tidy_menu (edit_menu, &left_out); });
+	/* the Edit, Region and Track menus leave out what cannot be used right now */
+	for (const char* path : { "/ui/Main/Edit", "/ui/Main/RegionMenu", "/ui/Main/TrackMenu" }) {
+		if (Gtk::MenuItem* item = dynamic_cast<Gtk::MenuItem*> (ActionManager::get_widget (path))) {
+			if (Gtk::Menu* m = item->get_submenu ()) {
+				std::set<Gtk::Widget*>* left_out = new std::set<Gtk::Widget*>;
+				m->signal_show ().connect ([m, left_out] () { tidy_menu (m, left_out); });
+			}
 		}
 	}
 
