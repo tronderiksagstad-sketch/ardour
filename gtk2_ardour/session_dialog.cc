@@ -325,7 +325,7 @@ SessionDialog::SessionDialog (DialogTab initial_tab, const std::string& session_
 	action_group->add (demo_session_action, sigc::mem_fun (*this, &SessionDialog::demo_button_choice_action));
 
 	set_position (WIN_POS_CENTER);
-	set_default_size (rintf (1040 * UIConfiguration::instance ().get_ui_scale ()), rintf (740 * UIConfiguration::instance ().get_ui_scale ()));
+	set_default_size (rintf (1040 * UIConfiguration::instance ().get_ui_scale ()), rintf (590 * UIConfiguration::instance ().get_ui_scale ()));
 	get_vbox()->set_spacing (6);
 	get_vbox()->pack_start (_open_table, true, true);
 
@@ -2125,7 +2125,7 @@ SessionDialog::build_left_panel ()
 	_left_panel.pack_start (*brand, false, false, 0);
 	_left_panel.pack_start (new_button, false, false);
 	_left_panel.pack_start (existing_button, false, false);
-	_left_panel.pack_start (_recent_heading, false, false, rintf (22 * scale));
+	_left_panel.pack_start (_recent_heading, false, false, rintf (44 * scale));
 	_left_panel.pack_start (_recent_list_box, true, true);
 }
 
