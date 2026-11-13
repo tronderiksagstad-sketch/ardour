@@ -91,6 +91,7 @@ extern VST3PluginUI* create_mac_vst3_gui (std::shared_ptr<ARDOUR::PlugInsertBase
 #include "plugin_dspload_ui.h"
 #include "plugin_eq_gui.h"
 #include "plugin_presets_ui.h"
+#include "plugin_browser.h"
 #include "plugin_ui.h"
 #include "processor_box.h"
 #include "public_editor.h"
@@ -179,6 +180,10 @@ PluginUIWindow::PluginUIWindow (std::shared_ptr<PlugInsertBase> pib,
 		signal_unmap_event ().connect (sigc::mem_fun (*pu, &GenericPluginUI::stop_updating));
 	}
 
+	if (have_gui && pib->plugin () && pib->plugin ()->get_info ()) {
+		_picture_name = pib->plugin ()->get_info ()->name;
+	}
+
 	set_name ("PluginEditor");
 	add_events (Gdk::KEY_PRESS_MASK | Gdk::KEY_RELEASE_MASK | Gdk::BUTTON_PRESS_MASK | Gdk::BUTTON_RELEASE_MASK);
 
@@ -234,6 +239,9 @@ PluginUIWindow::on_show ()
 
 		if (_pluginui->on_window_show (_title)) {
 			Window::on_show ();
+		}
+		if (!_picture_name.empty ()) {
+			PluginBrowser::capture_picture (*this, _picture_name);
 		}
 	}
 }

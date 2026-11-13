@@ -429,6 +429,40 @@ led (Cr const& cr, double x, double y, double r, bool on)
 	cr->fill ();
 }
 
+/* the kept picture of a plugin's own window, loaded the first time it is needed */
+static Cairo::RefPtr<Cairo::ImageSurface>
+picture_of (PluginBrowser::Entry const& e)
+{
+	if (!e.picture_tried) {
+		e.picture_tried = true;
+		const string path = PluginBrowser::picture_path (e.name);
+		if (Glib::file_test (path, Glib::FILE_TEST_EXISTS)) {
+			try {
+				e.picture = Cairo::ImageSurface::create_from_png (path);
+			} catch (...) {
+			}
+		}
+	}
+	return e.picture;
+}
+
+/* the picture fills the rectangle, cropped to fit, never stretched */
+static void
+draw_picture (Cr const& cr, Cairo::RefPtr<Cairo::ImageSurface> const& pic, double x, double y, double w, double h)
+{
+	const double iw = pic->get_width (), ih = pic->get_height ();
+	const double k  = std::max (w / iw, h / ih);
+	cr->save ();
+	cr->rectangle (x, y, w, h);
+	cr->clip ();
+	cr->translate (x + (w - iw * k) / 2, y + (h - ih * k) / 2);
+	cr->scale (k, k);
+	cr->set_source (pic, 0, 0);
+	Cairo::RefPtr<Cairo::SurfacePattern>::cast_dynamic (cr->get_source ())->set_filter (Cairo::FILTER_BILINEAR);
+	cr->paint ();
+	cr->restore ();
+}
+
 /** the big panel, 304 x 120 */
 static void
 draw_big (Cr const& cr, Gtk::Widget& w, double x, double y, PluginBrowser::Entry const& e, PluginBrowser::KindInfo const& k, bool frame = true)
@@ -445,6 +479,21 @@ draw_big (Cr const& cr, Gtk::Widget& w, double x, double y, PluginBrowser::Entry
 	string maker = Gtkmm2ext::markup_escape_text (!e.chain.empty () ? string (_("My chain")) : e.maker.empty () ? string (_("Plugin")) : e.maker);
 	text_at (cr, w, "<span letter_spacing=\"1400\">" + string (g_utf8_strup (maker.c_str (), -1)) + "</span>", 9, true, e.ink, 0.8, x + 30, y + 8, W - 60, true);
 
+	if (e.chain.empty ()) {
+		Cairo::RefPtr<Cairo::ImageSurface> pic = picture_of (e);
+		if (pic) {
+			/* what the plugin really looks like, with its name on a shaded strip */
+			draw_picture (cr, pic, x, y, W, H);
+			Cairo::RefPtr<Cairo::LinearGradient> g = Cairo::LinearGradient::create (0, y + H - 30, 0, y + H);
+			g->add_color_stop_rgba (0, 0, 0, 0, 0);
+			g->add_color_stop_rgba (1, 0, 0, 0, 0.8);
+			cr->rectangle (x, y + H - 30, W, 30);
+			cr->set_source (g);
+			cr->fill ();
+			text_at (cr, w, Gtkmm2ext::markup_escape_text (e.name), 13, true, 0xffffff, 1.0, x + 30, y + H - 24, W - 60, true);
+			return;
+		}
+	}
 	if (!e.chain.empty ()) {
 		/* a chain: its plugins side by side, in order */
 		const size_t n = std::min<size_t> (e.parts.size (), 6);
@@ -503,6 +552,13 @@ static void
 draw_small (Cr const& cr, double x, double y, PluginBrowser::Entry const& e, PluginBrowser::KindInfo const& k)
 {
 	panel (cr, x, y, 88, 40, 4, e, true);
+	if (e.chain.empty ()) {
+		Cairo::RefPtr<Cairo::ImageSurface> pic = picture_of (e);
+		if (pic) {
+			draw_picture (cr, pic, x + 1, y + 1, 86, 38);
+			return;
+		}
+	}
 	rgb (cr, 0x0a0c0e);
 	rounded (cr, x + 8, y + 11, 24, 18, 2);
 	cr->fill_preserve ();
@@ -1425,6 +1481,55 @@ PluginBrowser::show_for (std::shared_ptr<Route> route, int placement)
 		the_browser->_target = route;
 	}
 	the_browser->present ();
+}
+
+std::string
+PluginBrowser::picture_path (std::string const& plugin_name)
+{
+	string key = lower (PBD::sanitize_utf8 (plugin_name));
+	for (char& ch : key) {
+		if (!g_ascii_isalnum (ch)) { ch = '_'; }
+	}
+	return Glib::build_filename (user_config_directory (), "plugin_pictures", key + ".png");
+}
+
+/* A moment after a plugin's own window opens, take a picture of it from the
+ * screen and keep it. Once per plugin; the browser shows it from then on. */
+void
+PluginBrowser::capture_picture (Gtk::Window& window, std::string const& plugin_name)
+{
+	const string path = picture_path (plugin_name);
+	if (Glib::file_test (path, Glib::FILE_TEST_EXISTS)) {
+		return;
+	}
+	Gtk::Window* w = &window;
+	Glib::signal_timeout ().connect_once ([w, path] () {
+		bool alive = false;
+		for (Gtk::Window* t : Gtk::Window::list_toplevels ()) {
+			alive = alive || t == w;
+		}
+		if (!alive || !w->is_visible () || !w->get_window ()) {
+			return;
+		}
+		int x, y, ww, hh;
+		w->get_window ()->get_origin (x, y);
+		w->get_window ()->get_size (ww, hh);
+		if (ww < 120 || hh < 60) {
+			return;
+		}
+		GdkPixbuf* pb = gdk_pixbuf_get_from_drawable (NULL, gdk_get_default_root_window (), NULL, x, y, 0, 0, ww, hh);
+		if (!pb) {
+			return;
+		}
+		if (ww > 640) {
+			GdkPixbuf* small = gdk_pixbuf_scale_simple (pb, 640, hh * 640 / ww, GDK_INTERP_BILINEAR);
+			g_object_unref (pb);
+			pb = small;
+		}
+		g_mkdir_with_parents (Glib::path_get_dirname (path).c_str (), 0755);
+		gdk_pixbuf_save (pb, path.c_str (), "png", NULL, NULL);
+		g_object_unref (pb);
+	}, 1200);
 }
 
 void

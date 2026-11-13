@@ -377,6 +377,7 @@ public:
 
 private:
 	std::string _title;
+	std::string _picture_name; ///< set when the plugin made its own window: a picture of it is kept for the plugin browser
 	PlugUIBase* _pluginui;
 	PBD::ScopedConnection death_connection;
 	Gtk::Window* parent;

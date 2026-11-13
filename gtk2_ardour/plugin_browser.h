@@ -72,6 +72,11 @@ public:
 	/** Open the browser for the selected track. */
 	static void show_for_selected ();
 
+	/** Keep a picture of a plugin's own window (once, a moment after it opens),
+	 * so the browser can show what the plugin really looks like. */
+	static void capture_picture (Gtk::Window& window, std::string const& plugin_name);
+	static std::string picture_path (std::string const& plugin_name);
+
 	/* ---- text and colours the browser knows ---- */
 	struct Described { const char* name; const char* text; };
 	struct Skin { const char* maker; uint32_t light; uint32_t dark; uint32_t ink; };
@@ -118,6 +123,9 @@ public:
 		std::vector<std::pair<int,int> > hits;
 		/* knobs you turned on the unit (degrees), kept while the window lives */
 		mutable double knob[3] = { NAN, NAN, NAN };
+		/* a picture of the plugin's own window, if one was kept */
+		mutable Cairo::RefPtr<Cairo::ImageSurface> picture;
+		mutable bool picture_tried = false;
 		/* a chain: several plugins added together */
 		struct Part { std::string name; uint32_t light, dark, ink; };
 		std::vector<std::string> chain; ///< lower-case names, in order
