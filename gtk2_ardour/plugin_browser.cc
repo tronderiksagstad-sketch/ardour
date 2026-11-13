@@ -3448,6 +3448,14 @@ PluginBrowser::open_shelf ()
 	w->set_position (Gtk::WIN_POS_CENTER_ON_PARENT);
 	w->set_default_size (px (640), px (560));
 	w->signal_hide ().connect ([w] () { Glib::signal_idle ().connect_once ([w] () { delete w; }); });
+	/* Esc closes it, as it does the browser */
+	w->signal_key_press_event ().connect ([w] (GdkEventKey* ev) {
+		if (ev->keyval == GDK_Escape) {
+			w->hide ();
+			return true;
+		}
+		return false;
+	}, false);
 	bg (*w, "#1a1d22");
 
 	Gtk::VBox* col = manage (new Gtk::VBox (false, px (8)));
