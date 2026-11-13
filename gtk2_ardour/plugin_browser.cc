@@ -1957,17 +1957,26 @@ PluginBrowser::load_meta ()
 		return;
 	}
 	_chains.clear ();
+	_chain_states.clear ();
 	for (XMLNode* n : tree.root ()->children ()) {
 		string name, note;
 		int64_t seen = 0;
 		if (n->name () == "Chain") {
 			if (n->get_property ("name", name)) {
 				std::vector<string> parts;
+				std::vector<std::shared_ptr<XMLNode> > states;
 				for (XMLNode* c : n->children ()) {
 					string pn;
-					if (c->get_property ("name", pn)) { parts.push_back (pn); }
+					if (c->get_property ("name", pn)) {
+						parts.push_back (pn);
+						XMLNode* st = c->child ("Processor");
+						states.push_back (st ? std::shared_ptr<XMLNode> (new XMLNode (*st)) : std::shared_ptr<XMLNode> ());
+					}
 				}
-				if (!parts.empty ()) { _chains.push_back (std::make_pair (name, parts)); }
+				if (!parts.empty ()) {
+					_chains.push_back (std::make_pair (name, parts));
+					_chain_states[lower (name)] = states;
+				}
 			}
 			continue;
 		}
@@ -1995,8 +2004,13 @@ PluginBrowser::save_meta () const
 	for (auto const& c : _chains) {
 		XMLNode* n = root->add_child ("Chain");
 		n->set_property ("name", c.first);
-		for (string const& part : c.second) {
-			n->add_child ("Part")->set_property ("name", part);
+		std::map<string, std::vector<std::shared_ptr<XMLNode> > >::const_iterator st = _chain_states.find (lower (c.first));
+		for (size_t i = 0; i < c.second.size (); ++i) {
+			XMLNode* part = n->add_child ("Part");
+			part->set_property ("name", c.second[i]);
+			if (st != _chain_states.end () && i < st->second.size () && st->second[i]) {
+				part->add_child_copy (*st->second[i]);
+			}
 		}
 	}
 	XMLTree tree;
@@ -2902,6 +2916,40 @@ PluginBrowser::rack_move (int from, int slot)
 }
 
 /** Ctrl+Z: take back the last thing done to a track from this window */
+/* Build a plugin again from what get_state() said about it, with its settings,
+ * the way pasting a plugin does. Null if it cannot be built (not installed). */
+static std::shared_ptr<PluginInsert>
+plugin_from_state (Session& s, Route& r, XMLNode const& saved)
+{
+	try {
+		std::shared_ptr<PluginInsert> p (new PluginInsert (s, r));
+		const PBD::ID id = p->id ();
+		XMLNode       state (saved);
+		state.remove_nodes_and_delete ("Processor");
+		uint32_t count = 0;
+		state.get_property ("count", count);
+		state.remove_property ("count");
+		state.remove_property ("custom");
+		state.remove_nodes_and_delete ("ConfiguredInput");
+		state.remove_nodes_and_delete ("CustomSinks");
+		state.remove_nodes_and_delete ("ConfiguredOutput");
+		state.remove_nodes_and_delete ("PresetOutput");
+		state.remove_nodes_and_delete ("ThruMap");
+		for (uint32_t i = 0; i < count; ++i) {
+			state.remove_nodes_and_delete (string_compose ("InputMap-%1", i));
+			state.remove_nodes_and_delete (string_compose ("OutputMap-%1", i));
+		}
+		{
+			PBD::Stateful::ForceIDRegeneration force_ids;
+			p->set_state (state, PBD::Stateful::current_state_version);
+		}
+		p->update_id (id);
+		return p;
+	} catch (...) {
+		return std::shared_ptr<PluginInsert> ();
+	}
+}
+
 void
 PluginBrowser::undo ()
 {
@@ -2935,36 +2983,11 @@ PluginBrowser::undo ()
 			}
 		} else if (u.state) {
 			/* build it again from what it was, the way pasting a plugin does */
-			try {
-				std::shared_ptr<PluginInsert> p (new PluginInsert (*s, *r));
-				const PBD::ID id = p->id ();
-				XMLNode       state (*u.state);
-				state.remove_nodes_and_delete ("Processor");
-				uint32_t count = 0;
-				state.get_property ("count", count);
-				state.remove_property ("count");
-				state.remove_property ("custom");
-				state.remove_nodes_and_delete ("ConfiguredInput");
-				state.remove_nodes_and_delete ("CustomSinks");
-				state.remove_nodes_and_delete ("ConfiguredOutput");
-				state.remove_nodes_and_delete ("PresetOutput");
-				state.remove_nodes_and_delete ("ThruMap");
-				for (uint32_t i = 0; i < count; ++i) {
-					state.remove_nodes_and_delete (string_compose ("InputMap-%1", i));
-					state.remove_nodes_and_delete (string_compose ("OutputMap-%1", i));
-				}
-				{
-					PBD::Stateful::ForceIDRegeneration force_ids;
-					p->set_state (state, PBD::Stateful::current_state_version);
-				}
-				p->update_id (id);
-				if (r->add_processor_by_index (p, u.index, &err, u.active) == 0) {
-					_rack_sel = p;
-					rack_say (string_compose (_("%1 is back on %2, with its settings."), u.name, r->name ()));
-				} else {
-					rack_say (string_compose (_("%1 could not be put back on %2."), u.name, r->name ()));
-				}
-			} catch (...) {
+			std::shared_ptr<PluginInsert> p = plugin_from_state (*s, *r, *u.state);
+			if (p && r->add_processor_by_index (p, u.index, &err, u.active) == 0) {
+				_rack_sel = p;
+				rack_say (string_compose (_("%1 is back on %2, with its settings."), u.name, r->name ()));
+			} else {
 				rack_say (string_compose (_("%1 could not be put back on %2."), u.name, r->name ()));
 			}
 		}
@@ -3611,10 +3634,34 @@ PluginBrowser::add_entry (int entry)
 		/* a chain: each of its plugins, in order */
 		const string name = e.name;
 		const vector<string> parts = e.chain;
+		std::vector<std::shared_ptr<XMLNode> > states;
+		std::map<string, std::vector<std::shared_ptr<XMLNode> > >::const_iterator st = _chain_states.find (lower (name));
+		if (st != _chain_states.end ()) { states = st->second; }
+		Session* sess = ARDOUR_UI::instance ()->the_session ();
 		int added = 0;
-		for (string const& pn : parts) {
+		for (size_t pi = 0; pi < parts.size (); ++pi) {
+			string const& pn = parts[pi];
+			/* with the settings it had when the chain was saved, if they were kept */
+			if (sess && pi < states.size () && states[pi]) {
+				std::shared_ptr<PluginInsert> p = plugin_from_state (*sess, *route, *states[pi]);
+				bool active = true;
+				states[pi]->get_property ("active", active);
+				Route::ProcessorStreams err;
+				if (p && route->add_processor (p, PreFader, &err, active) == 0) {
+					Undo u;
+					u.what   = Undo::Added;
+					u.route  = route;
+					u.proc   = p;
+					u.name   = pn;
+					u.index  = 0;
+					u.active = true;
+					_undo.push_back (u);
+					++added;
+					continue;
+				}
+			}
 			for (size_t i = 0; i < _entries.size (); ++i) {
-				if (_entries[i].chain.empty () && _entries[i].lname == pn && !_entries[i].instrument) {
+				if (_entries[i].chain.empty () && _entries[i].lname == lower (pn) && !_entries[i].instrument) {
 					if (add_one ((int) i, false)) { ++added; }
 					break;
 				}
@@ -3829,14 +3876,24 @@ PluginBrowser::save_chain ()
 		name = _("My chain");
 	}
 	vector<string> parts;
+	std::vector<std::shared_ptr<XMLNode> > states;
 	stop_hear ();
-	for (string const& un : track_plugin_names (_target.lock ())) {
-		for (Entry const& e : _entries) {
-			if (e.chain.empty () && !e.instrument && (e.lname == lower (un))) {
-				parts.push_back (e.name);
-				break;
+	if (std::shared_ptr<Route> tr = _target.lock ()) {
+		tr->foreach_processor ([&] (std::weak_ptr<Processor> wp) {
+			std::shared_ptr<PluginInsert> pi = std::dynamic_pointer_cast<PluginInsert> (wp.lock ());
+			if (!pi || !pi->display_to_user ()) {
+				return;
 			}
-		}
+			const string un = PBD::sanitize_utf8 (pi->name ());
+			for (Entry const& e : _entries) {
+				if (e.chain.empty () && !e.instrument && (e.lname == lower (un))) {
+					parts.push_back (e.name);
+					/* the settings, as they are now */
+					states.push_back (std::shared_ptr<XMLNode> (&pi->get_state ()));
+					break;
+				}
+			}
+		});
 	}
 	_chain_row.hide ();
 	if (parts.size () < 2) {
@@ -3851,6 +3908,7 @@ PluginBrowser::save_chain ()
 		}
 	}
 	_chains.push_back (std::make_pair (name, parts));
+	_chain_states[lower (name)] = states;
 	save_meta ();
 	_pin = -1;
 	add_chain_entries ();

@@ -199,6 +199,8 @@ private:
 	int64_t                _hear_pos;
 	/* chains: saved sets of plugins */
 	std::vector<std::pair<std::string, std::vector<std::string> > > _chains;
+	/** each chain's plugins as they were saved, with their settings (same order; a null one is a plugin saved without) */
+	std::map<std::string, std::vector<std::shared_ptr<XMLNode> > > _chain_states;
 	ArdourWidgets::ArdourButton _save_chain;
 	Gtk::Entry             _chain_name;
 	Gtk::HBox              _chain_row;
