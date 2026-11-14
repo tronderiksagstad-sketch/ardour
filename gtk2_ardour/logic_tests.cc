@@ -16,7 +16,7 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-/* Tests for the parts of this fork that are pure logic: the Ctrl+Space
+/* Tests for the parts of this fork that are pure logic: the Ctrl+Shift+K
  * search matching, the plugin browser's kind guessing and search ranking,
  * the MIDI file writer/reader used for MuseScore, and the warp-marker rule.
  *
@@ -82,7 +82,7 @@ random_bytes (size_t max_len)
 	return s;
 }
 
-/* ---- Ctrl+Space search ------------------------------------------------ */
+/* ---- Ctrl+Shift+K search ------------------------------------------------ */
 
 static int
 score_of (string const& text, string const& query)

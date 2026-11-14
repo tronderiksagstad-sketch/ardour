@@ -2431,6 +2431,15 @@ PluginBrowser::tile_tip (int filter) const
 }
 
 void
+PluginBrowser::focus_search ()
+{
+	_search.grab_focus ();
+	/* grabbing the focus selects the whole text: put the cursor after it instead */
+	_search.select_region (-1, -1);
+	_search.set_position (-1);
+}
+
+void
 PluginBrowser::set_foot (string const& text)
 {
 	if (!text.empty ()) {
@@ -2528,7 +2537,7 @@ PluginBrowser::set_tab (bool instruments)
 	update_tiles ();
 	rebuild ();
 	set_foot ("");
-	_search.grab_focus ();
+	focus_search ();
 }
 
 void
@@ -3168,7 +3177,7 @@ PluginBrowser::picked (std::shared_ptr<Route> r)
 		_placement = -1;
 	}
 	set_target (r);
-	_search.grab_focus ();
+	focus_search ();
 }
 
 void
@@ -3327,7 +3336,7 @@ PluginBrowser::end_edit (bool save)
 	_note_edit.hide ();
 	show_selected ();
 	_list->queue_draw ();
-	_search.grab_focus ();
+	focus_search ();
 }
 
 void
@@ -4038,7 +4047,7 @@ PluginBrowser::on_show ()
 	move (mx + std::max (0, (mww - w) / 2), my + std::max (0, (mwh - h) / 2));
 
 	Gtk::Window::on_show ();
-	_search.grab_focus ();
+	focus_search ();
 }
 
 void
@@ -4118,7 +4127,7 @@ PluginBrowser::on_key_press_event (GdkEventKey* ev)
 				/* anything else is for the search */
 				_rack_sel.reset ();
 				_rack->queue_draw ();
-				_search.grab_focus ();
+				focus_search ();
 				_search.set_position (-1);
 			}
 			break;

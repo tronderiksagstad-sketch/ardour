@@ -805,8 +805,8 @@ CommandPalette::on_key_press_event (GdkEventKey* ev)
 		hide ();
 		return true;
 	}
-	/* Ctrl+Space again closes it */
-	if (ev->keyval == GDK_space && (ev->state & GDK_CONTROL_MASK)) {
+	/* Ctrl+Shift+K again closes it */
+	if ((ev->keyval == GDK_k || ev->keyval == GDK_K) && (ev->state & GDK_CONTROL_MASK)) {
 		hide ();
 		return true;
 	}

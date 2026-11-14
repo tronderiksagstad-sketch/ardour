@@ -42,7 +42,7 @@ namespace ARDOUR {
 	class Route;
 }
 
-/** The Ctrl+Space search: one box that finds and runs any menu command,
+/** The Ctrl+Shift+K search: one box that finds and runs any menu command,
  * jumps to a track or marker, or adds a plugin to the selected track.
  */
 class CommandPalette : public Gtk::Window

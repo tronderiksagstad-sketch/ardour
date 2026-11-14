@@ -17,7 +17,7 @@
  */
 
 
-/* Finding typed text inside names: used by the Ctrl+Space search.
+/* Finding typed text inside names: used by the Ctrl+Shift+K search.
  * Nothing here needs the rest of Ardour, so it can be tested on its own
  * (see logic_tests.cc). */
 

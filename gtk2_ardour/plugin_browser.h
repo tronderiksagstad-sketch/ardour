@@ -280,6 +280,7 @@ private:
 	void cycle_format ();
 	void start_edit ();
 	void end_edit (bool save);
+	void focus_search ();
 	void set_foot (std::string const&);
 	void rack_changed ();
 	bool rack_expose (GdkEventExpose*);
