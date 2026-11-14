@@ -73,6 +73,9 @@ CommandPalette::toggle ()
 		the_palette = new CommandPalette ();
 	}
 	if (the_palette->is_visible ()) {
+		if (the_palette->just_shown ()) {
+			return; /* the same key pressed twice in a row (held down, or sent twice) */
+		}
 		the_palette->hide ();
 	} else {
 		the_palette->present ();
@@ -756,6 +759,7 @@ void
 CommandPalette::on_show ()
 {
 	_got_focus = false;
+	_shown_at  = g_get_monotonic_time ();
 	collect ();
 	_entry.set_text ("");
 	refilter ();
@@ -807,7 +811,9 @@ CommandPalette::on_key_press_event (GdkEventKey* ev)
 	}
 	/* Ctrl+Shift+K again closes it */
 	if ((ev->keyval == GDK_k || ev->keyval == GDK_K) && (ev->state & GDK_CONTROL_MASK)) {
-		hide ();
+		if (!just_shown ()) {
+			hide ();
+		}
 		return true;
 	}
 	return Gtk::Window::on_key_press_event (ev);
@@ -834,10 +840,16 @@ CommandPalette::on_focus_out_event (GdkEventFocus* ev)
 {
 	/* clicking elsewhere closes it, but only once it has really had the focus:
 	   window managers often move the focus about while a new window appears */
-	if (_got_focus) {
+	if (_got_focus && !just_shown ()) {
 		hide ();
 	}
 	return Gtk::Window::on_focus_out_event (ev);
+}
+
+bool
+CommandPalette::just_shown () const
+{
+	return g_get_monotonic_time () - _shown_at < 600000; /* 0.6 s */
 }
 
 bool

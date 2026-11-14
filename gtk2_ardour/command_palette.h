@@ -119,6 +119,8 @@ private:
 	bool view_button_release (GdkEventButton*);
 	bool on_focus_out_event (GdkEventFocus*);
 	bool on_focus_in_event (GdkEventFocus*);
+	gint64 _shown_at = 0; /* when it appeared: a key held down or a second press right after must not close it */
+	bool just_shown () const;
 	bool _got_focus = false; /* a focus-out before the first focus-in is the window manager settling, not a click elsewhere */
 	bool on_key_press_event (GdkEventKey*);
 	void on_show ();
