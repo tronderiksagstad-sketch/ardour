@@ -851,31 +851,6 @@ tidy_menu (Gtk::Menu* menu, std::set<Gtk::Widget*>* left_out)
 	left_out->clear ();
 
 	std::vector<Gtk::Widget*> kids = menu->get_children ();
-	for (Gtk::Widget* w : kids) {
-		if (dynamic_cast<Gtk::SeparatorMenuItem*> (w) || !w->get_visible ()) {
-			continue;
-		}
-		if (!w->get_sensitive ()) {
-			w->hide ();
-			left_out->insert (w);
-		}
-	}
-
-	/* nothing usable at all (no region selected, say): show the whole menu, greyed,
-	 * so that it is clear what could be done once there is something to work on */
-	bool any_usable = false;
-	for (Gtk::Widget* w : kids) {
-		if (!dynamic_cast<Gtk::SeparatorMenuItem*> (w) && w->get_visible ()) {
-			any_usable = true;
-		}
-	}
-	if (!any_usable) {
-		for (Gtk::Widget* w : *left_out) {
-			w->show ();
-		}
-		left_out->clear ();
-		return;
-	}
 
 	bool        have_item = false;
 	Gtk::Widget* pending  = 0;
@@ -906,7 +881,7 @@ ARDOUR_UI::build_menu_bar ()
 	menu_bar = dynamic_cast<MenuBar*> (ActionManager::get_widget (X_("/Main")));
 	menu_bar->set_name ("MainMenuBar");
 
-	/* the menus leave out what cannot be used right now */
+	/* the menus drop doubled and dangling separators (what cannot be used stays, greyed) */
 	for (const char* path : { "/ui/Main/Session", "/ui/Main/Transport", "/ui/Main/Edit", "/ui/Main/RegionMenu", "/ui/Main/TrackMenu", "/ui/Main/View", "/ui/Main/WindowMenu", "/ui/Main/Help" }) {
 		if (Gtk::MenuItem* item = dynamic_cast<Gtk::MenuItem*> (ActionManager::get_widget (path))) {
 			if (Gtk::Menu* m = item->get_submenu ()) {

@@ -1,6 +1,12 @@
 gtk-button-images = 0							      # [ Default value: 1 ] Show stock icons on buttons.
 gtk-theme-name = Ardour # override default gtk-default theme, "MS-Windows" vs "Raleigh" (Linux, Mac)
 
+style "menu_item_text" = "default_generic"
+{
+  # greyed-out menu entries stay readable
+  fg[INSENSITIVE] = mix (0.5, @foreground, @background)
+}
+
 style "default" = "medium_text"
 {
   #Original values for reference
@@ -1132,6 +1138,7 @@ class "GtkSpinButton" style:highest "spin_button"
 class "GtkEntry" style "entry"                          # not :highest to allow instances to override this
 class "GtkScrollbar" style:highest "ardour_adjusters"
 class "GtkLabel" style:highest "default_generic"
+widget_class "*<GtkMenuItem>*" style:highest "menu_item_text"
 class "GtkButton" style:highest "ardour_button"
 class "GtkCheckButton" style:highest "ardour_button"
 class "GtkArrow" style:highest "tearoff_arrow"
