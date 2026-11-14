@@ -906,8 +906,8 @@ ARDOUR_UI::build_menu_bar ()
 	menu_bar = dynamic_cast<MenuBar*> (ActionManager::get_widget (X_("/Main")));
 	menu_bar->set_name ("MainMenuBar");
 
-	/* the Edit, Region and Track menus leave out what cannot be used right now */
-	for (const char* path : { "/ui/Main/Edit", "/ui/Main/RegionMenu", "/ui/Main/TrackMenu" }) {
+	/* the menus leave out what cannot be used right now */
+	for (const char* path : { "/ui/Main/Session", "/ui/Main/Transport", "/ui/Main/Edit", "/ui/Main/RegionMenu", "/ui/Main/TrackMenu", "/ui/Main/View", "/ui/Main/WindowMenu", "/ui/Main/Help" }) {
 		if (Gtk::MenuItem* item = dynamic_cast<Gtk::MenuItem*> (ActionManager::get_widget (path))) {
 			if (Gtk::Menu* m = item->get_submenu ()) {
 				std::set<Gtk::Widget*>* left_out = new std::set<Gtk::Widget*>;
