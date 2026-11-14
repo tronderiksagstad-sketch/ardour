@@ -118,6 +118,8 @@ private:
 	bool entry_key_press (GdkEventKey*);
 	bool view_button_release (GdkEventButton*);
 	bool on_focus_out_event (GdkEventFocus*);
+	bool on_focus_in_event (GdkEventFocus*);
+	bool _got_focus = false; /* a focus-out before the first focus-in is the window manager settling, not a click elsewhere */
 	bool on_key_press_event (GdkEventKey*);
 	void on_show ();
 

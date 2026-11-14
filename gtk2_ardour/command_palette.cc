@@ -755,6 +755,7 @@ CommandPalette::save_recent ()
 void
 CommandPalette::on_show ()
 {
+	_got_focus = false;
 	collect ();
 	_entry.set_text ("");
 	refilter ();
@@ -831,7 +832,17 @@ CommandPalette::view_button_release (GdkEventButton* ev)
 bool
 CommandPalette::on_focus_out_event (GdkEventFocus* ev)
 {
-	/* clicking elsewhere closes it */
-	hide ();
+	/* clicking elsewhere closes it, but only once it has really had the focus:
+	   window managers often move the focus about while a new window appears */
+	if (_got_focus) {
+		hide ();
+	}
 	return Gtk::Window::on_focus_out_event (ev);
+}
+
+bool
+CommandPalette::on_focus_in_event (GdkEventFocus* ev)
+{
+	_got_focus = true;
+	return Gtk::Window::on_focus_in_event (ev);
 }
