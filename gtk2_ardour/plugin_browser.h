@@ -42,6 +42,18 @@
 
 #include "widgets/ardour_button.h"
 
+/** A button with a small number in its top right corner (how many plugins are behind it) */
+class PluginCountButton : public ArdourWidgets::ArdourButton
+{
+public:
+	PluginCountButton () : _count (-1) {}
+	void set_count (int n) { if (n != _count) { _count = n; queue_draw (); } }
+protected:
+	void render (Cairo::RefPtr<Cairo::Context> const&, cairo_rectangle_t*);
+private:
+	int _count;
+};
+
 class XMLNode;
 
 namespace ARDOUR {
@@ -159,11 +171,11 @@ private:
 	Gtk::Entry             _search;
 	ArdourWidgets::ArdourButton _chip;
 	Gtk::Table             _tiles;
-	ArdourWidgets::ArdourButton _tile_all;
-	ArdourWidgets::ArdourButton _tile_fav;
-	ArdourWidgets::ArdourButton _tile_new;
-	ArdourWidgets::ArdourButton _tile_chain;
-	std::vector<ArdourWidgets::ArdourButton*> _tile_kind;
+	PluginCountButton _tile_all;
+	PluginCountButton _tile_fav;
+	PluginCountButton _tile_new;
+	PluginCountButton _tile_chain;
+	std::vector<PluginCountButton*> _tile_kind;
 	ArdourWidgets::ArdourButton _manage;
 	ArdourWidgets::ArdourButton _get_free;
 	sigc::connection       _free_watch;

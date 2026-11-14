@@ -1674,7 +1674,7 @@ PluginBrowser::PluginBrowser ()
 	hover (_tile_new, -3);
 	hover (_tile_chain, -4);
 	for (int i = 0; i < NKinds; ++i) {
-		ArdourWidgets::ArdourButton* b = new ArdourWidgets::ArdourButton;
+		PluginCountButton* b = new PluginCountButton;
 		b->set_name ("tab button");
 		b->set_text (_(kind_table[i].label));
 		b->signal_clicked.connect ([this, i] () { set_filter (i); });
@@ -1684,7 +1684,7 @@ PluginBrowser::PluginBrowser ()
 	for (ArdourWidgets::ArdourButton* b : { &_tile_all, &_tile_fav, &_tile_new, &_tile_chain }) {
 		b->set_size_request (-1, px (44));
 	}
-	for (ArdourWidgets::ArdourButton* b : _tile_kind) {
+	for (PluginCountButton* b : _tile_kind) {
 		b->set_size_request (-1, px (44));
 	}
 	_tiles.set_homogeneous (true);
@@ -1931,7 +1931,7 @@ PluginBrowser::PluginBrowser ()
 PluginBrowser::~PluginBrowser ()
 {
 	delete _picker;
-	for (ArdourWidgets::ArdourButton* b : _tile_kind) {
+	for (PluginCountButton* b : _tile_kind) {
 		delete b;
 	}
 }
@@ -2399,6 +2399,27 @@ PluginBrowser::rebuild ()
 
 /* ---- the parts ----------------------------------------------------------- */
 
+void
+PluginCountButton::render (Cairo::RefPtr<Cairo::Context> const& ctx, cairo_rectangle_t* area)
+{
+	ArdourWidgets::ArdourButton::render (ctx, area);
+	if (_count < 0) {
+		return;
+	}
+	Glib::RefPtr<Pango::Layout> l = Pango::Layout::create (get_pango_context ());
+	Pango::FontDescription fd = get_pango_context ()->get_font_description ();
+	fd.set_size (std::max (7, (int) (fd.get_size () / PANGO_SCALE * 0.78)) * PANGO_SCALE);
+	l->set_font_description (fd);
+	l->set_text (string_compose ("%1", _count));
+	int w, h;
+	l->get_pixel_size (w, h);
+	ctx->save ();
+	ctx->set_source_rgba (1, 1, 1, 0.62);
+	ctx->move_to (get_width () - w - 8, 4);
+	pango_cairo_show_layout (ctx->cobj (), l->gobj ());
+	ctx->restore ();
+}
+
 std::string
 PluginBrowser::tile_tip (int filter) const
 {
@@ -2443,6 +2464,23 @@ PluginBrowser::update_tiles ()
 	const bool have_chains = !_instruments && !_chains.empty ();
 	if (_filter == -4 && !have_chains) {
 		_filter = -1;
+	}
+	{
+		int n_all = 0, n_fav = 0;
+		std::vector<int> per_kind (NKinds, 0);
+		for (Entry const& e : _entries) {
+			if (!e.chain.empty () || e.instrument != _instruments) { continue; }
+			++n_all;
+			if (e.favourite) { ++n_fav; }
+			if (e.kind >= 0 && e.kind < NKinds) { ++per_kind[e.kind]; }
+		}
+		_tile_all.set_count (n_all);
+		_tile_fav.set_count (n_fav);
+		_tile_new.set_count (n_new);
+		_tile_chain.set_count ((int) _chains.size ());
+		for (int i = 0; i < NKinds; ++i) {
+			_tile_kind[i]->set_count (per_kind[i]);
+		}
 	}
 	_tile_all.set_text (_instruments ? _("All my instruments") : _("All my effects"));
 	_tiles.attach (_tile_all, 0, 2, 0, 1);
