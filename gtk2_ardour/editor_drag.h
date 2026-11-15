@@ -590,6 +590,24 @@ public:
 	void aborted (bool);
 };
 
+/** Comping: drag across a take to put that part on top of the other takes */
+class CompDrag : public EditorDrag
+{
+public:
+	CompDrag (Editor&, ArdourCanvas::Item*, RegionView*);
+	~CompDrag ();
+
+	void start_grab (GdkEvent *, Gdk::Cursor* c = 0);
+	void motion (GdkEvent*, bool);
+	void finished (GdkEvent*, bool);
+	void aborted (bool);
+
+private:
+	RegionView*              _rv;
+	Temporal::timepos_t      _start;
+	ArdourCanvas::Rectangle* _rect;
+};
+
 /** Drags to create regions */
 class RegionCreateDrag : public EditorDrag
 {

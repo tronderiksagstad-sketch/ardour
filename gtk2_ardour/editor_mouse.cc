@@ -897,6 +897,15 @@ Editor::button_press_handler_1 (ArdourCanvas::Item* item, GdkEvent* event, ItemT
 					return true;
 				}
 
+				/* comping: a drag across a take in its lane puts that part on top */
+				if (_comp_mode && clicked_regionview && Keyboard::no_modifier_keys_pressed (&event->button)) {
+					RouteTimeAxisView* rtv = dynamic_cast<RouteTimeAxisView*> (&clicked_regionview->get_time_axis_view ());
+					if (rtv && rtv->layer_display () == Stacked && dynamic_cast<AudioRegionView*> (clicked_regionview)) {
+						_drags->set (new CompDrag (*this, item, clicked_regionview), event);
+						return true;
+					}
+				}
+
 				if (Keyboard::modifier_state_equals (event->button.state, ArdourKeyboard::slip_contents_modifier ())) {
 					if (!clicked_regionview->region()->locked() && (Config->get_edit_mode() != Lock)) {
 						std::list<RegionView*> rvl (selection->regions.by_layer());

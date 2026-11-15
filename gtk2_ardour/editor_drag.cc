@@ -7387,6 +7387,61 @@ RegionCutDrag::aborted (bool)
 {
 }
 
+CompDrag::CompDrag (Editor& e, ArdourCanvas::Item* item, RegionView* rv)
+	: EditorDrag (e, item, e.time_domain (), e.get_trackview_group ())
+	, _rv (rv)
+	, _rect (0)
+{
+}
+
+CompDrag::~CompDrag ()
+{
+	delete _rect;
+}
+
+void
+CompDrag::start_grab (GdkEvent* event, Gdk::Cursor* c)
+{
+	Drag::start_grab (event, c);
+	_start = adjusted_current_time (event);
+	_rect = new ArdourCanvas::Rectangle (_editor.get_trackview_group ());
+	_rect->set_outline_color (0x4c9affff);
+	_rect->set_fill_color (0x4c9aff55);
+	_rect->set_outline_width (1.0);
+	_rect->set_ignore_events (true);
+	motion (event, false);
+}
+
+void
+CompDrag::motion (GdkEvent* event, bool)
+{
+	timepos_t now = adjusted_current_time (event);
+	timepos_t a = std::min (_start, now);
+	timepos_t b = std::max (_start, now);
+	if (a < _rv->region ()->position ()) { a = _rv->region ()->position (); }
+	if (b > _rv->region ()->position () + _rv->region ()->length ()) { b = _rv->region ()->position () + _rv->region ()->length (); }
+
+	TimeAxisView& tav = _rv->get_time_axis_view ();
+	const double y0 = tav.y_position ();
+	_rect->set (ArdourCanvas::Rect (_editor.time_to_pixel (a), y0, _editor.time_to_pixel (b), y0 + tav.current_height ()));
+}
+
+void
+CompDrag::finished (GdkEvent* event, bool movement_occurred)
+{
+	if (!movement_occurred) {
+		/* a plain click still selects the take */
+		_editor.get_selection ().set (_rv);
+		return;
+	}
+	_editor.comp_use_part (_rv, _start, adjusted_current_time (event));
+}
+
+void
+CompDrag::aborted (bool)
+{
+}
+
 RegionMarkerDrag::RegionMarkerDrag (Editor& e, RegionView* r, ArdourCanvas::Item* i)
 	: Drag (e, i, r->region ()->position ().time_domain (), e.get_trackview_group())
 	, rv (r)

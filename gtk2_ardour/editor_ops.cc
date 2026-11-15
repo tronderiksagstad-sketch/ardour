@@ -2781,6 +2781,81 @@ Editor::raise_region ()
 	do_layer_operation (Raise);
 }
 
+/** Comping: turn the lanes under the track on or off. With them on, the takes
+ *  are shown one per lane and a drag across a take puts that part on top.
+ */
+void
+Editor::toggle_comp_takes ()
+{
+	Glib::RefPtr<ToggleAction> act = ActionManager::get_toggle_action (X_("Editor"), X_("comp-takes"));
+	_comp_mode = act && act->get_active ();
+
+	TrackViewList tvl = selection->tracks.empty () ? track_views : TrackViewList (selection->tracks);
+	for (TrackViewList::iterator i = tvl.begin (); i != tvl.end (); ++i) {
+		RouteTimeAxisView* rtv = dynamic_cast<RouteTimeAxisView*> (*i);
+		if (!rtv || !rtv->is_track ()) {
+			continue;
+		}
+		rtv->set_layer_display (_comp_mode ? Stacked : Overlaid);
+		if (_comp_mode) {
+			rtv->set_height_enum (HeightLarger);
+		}
+	}
+}
+
+/** Put the part from @a s to @a e of the region @a rv shows on top of the
+ *  other takes, with short fades so the join does not click.
+ */
+void
+Editor::comp_use_part (RegionView* rv, timepos_t s, timepos_t e)
+{
+	std::shared_ptr<Region> r = rv->region ();
+	std::shared_ptr<Playlist> pl = r->playlist ();
+	if (!pl || !_session) {
+		return;
+	}
+
+	if (e < s) {
+		std::swap (s, e);
+	}
+	if (s < r->position ()) { s = r->position (); }
+	if (e > r->position () + r->length ()) { e = r->position () + r->length (); }
+	if (s.distance (e).samples () < _session->sample_rate () / 200) {
+		return; /* under 5 ms: a click, not a part */
+	}
+
+	string name;
+	RegionFactory::region_name (name, r->name (), true);
+
+	PropertyList plist;
+	plist.add (ARDOUR::Properties::length, s.distance (e));
+	plist.add (ARDOUR::Properties::name, name);
+
+	std::shared_ptr<Region> part = RegionFactory::create (r, r->position ().distance (s), plist);
+	if (!part) {
+		return;
+	}
+
+	begin_reversible_command (_("comp: use part of a take"));
+	pl->clear_changes ();
+	pl->clear_owned_changes ();
+	pl->freeze ();
+	pl->add_region (part, s);
+	pl->raise_region_to_top (part);
+	if (std::shared_ptr<AudioRegion> ar = std::dynamic_pointer_cast<AudioRegion> (part)) {
+		const samplecnt_t xfade = _session->sample_rate () / 100; /* 10 ms */
+		ar->set_fade_in_length (xfade);
+		ar->set_fade_out_length (xfade);
+	}
+	pl->thaw ();
+
+	vector<Command*> cmds;
+	pl->rdiff (cmds);
+	_session->add_commands (cmds);
+	_session->add_command (new StatefulDiffCommand (pl));
+	commit_reversible_command ();
+}
+
 void
 Editor::raise_region_to_top ()
 {

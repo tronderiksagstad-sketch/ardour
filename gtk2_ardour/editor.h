@@ -652,6 +652,8 @@ private:
 	TempoMarker* find_marker_for_tempo (Temporal::TempoPoint const &);
 	MeterMarker* find_marker_for_meter (Temporal::MeterPoint const &);
 	bool _show_marker_lines;
+	bool _comp_mode; ///< takes are shown as lanes and a drag across a take puts that part on top
+
 
 	typedef std::map<ARDOUR::Location*,LocationMarkers*> LocationMarkerMap;
 	LocationMarkerMap location_markers;
@@ -1146,6 +1148,9 @@ private:
 	void do_layer_operation (LayerOperation);
 	void raise_region ();
 	void raise_region_to_top ();
+	void toggle_comp_takes ();
+	bool comp_mode () const { return _comp_mode; }
+	void comp_use_part (RegionView*, Temporal::timepos_t, Temporal::timepos_t);
 	void change_region_layering_order (bool from_context_menu);
 	void lower_region ();
 	void lower_region_to_bottom ();
@@ -1604,6 +1609,7 @@ protected:
 
 private:
 	friend class DragManager;
+	friend class CompDrag;
 	friend class EditorRouteGroups;
 	friend class EditorRegions;
 	friend class EditorSections;
