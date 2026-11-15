@@ -42,6 +42,8 @@
 #include "ardour/export_handler.h"
 #include "ardour/profile.h"
 
+#include "widgets/ardour_button.h"
+
 #include "export_dialog.h"
 #include "export_report.h"
 #include "gui_thread.h"
@@ -184,6 +186,56 @@ ExportDialog::init_gui ()
 	file_format_selector->pack_start (*preset_align, false, false, 0);
 	file_format_selector->pack_start (*file_notebook, false, false, 0);
 	file_format_selector->pack_start (*soundcloud_selector, false, false, 0);
+
+	/* The first page: three cards, one click on a card picks everything about the format.
+	 * The pages after it keep every detail for the rare occasion. */
+	{
+		struct Card { const char* title; const char* note; const char* spec; const char* preset; };
+		const Card cards[] = {
+			{ N_("Master"), N_("Best quality, for mixing or mastering"), "WAV", "WAV @ session-rate" },
+			{ N_("Share"),  N_("Small file to send or put online"),      "MP3", "mp3" },
+			{ N_("CD"),     N_("For burning a CD"),                       "WAV 16-bit 44.1 kHz", "CD (Red Book)" },
+		};
+		const float scale = UIConfiguration::instance ().get_ui_scale ();
+
+		Gtk::Label* heading = Gtk::manage (new Gtk::Label);
+		heading->set_markup (string_compose ("<span size=\"x-large\" weight=\"bold\">%1</span>", _("Where is it going?")));
+
+		Gtk::HBox* row = Gtk::manage (new Gtk::HBox (true, 12));
+		for (Card const& c : cards) {
+			ArdourWidgets::ArdourButton* b = Gtk::manage (new ArdourWidgets::ArdourButton);
+			b->set_name ("tab button");
+			b->set_corner_radius (10);
+			b->set_text (string_compose ("%1\n%2\n%3", _(c.title), _(c.note), c.spec));
+			b->set_size_request (rintf (250 * scale), rintf (110 * scale));
+			const std::string preset = c.preset;
+			b->signal_clicked.connect ([this, preset] () {
+				Gtk::ComboBox& combo = preset_selector->the_combo ();
+				Glib::RefPtr<Gtk::TreeModel> model = combo.get_model ();
+				for (Gtk::TreeModel::iterator i = model->children ().begin (); i != model->children ().end (); ++i) {
+					Glib::ustring label;
+					i->get_value (0, label);
+					if (label == preset) {
+						combo.set_active (i);
+						break;
+					}
+				}
+			});
+			row->pack_start (*b, true, true);
+		}
+
+		Gtk::Label* hint = Gtk::manage (new Gtk::Label (_("Pick one, then press Export. The other tabs hold every detail.")));
+
+		Gtk::VBox* quick = Gtk::manage (new Gtk::VBox (false, 18));
+		quick->set_border_width (rintf (24 * scale));
+		quick->pack_start (*heading, false, false);
+		quick->pack_start (*row, false, false);
+		quick->pack_start (*hint, false, false);
+
+		Gtk::Alignment* centre = Gtk::manage (new Gtk::Alignment (0.5, 0.35, 0, 0));
+		centre->add (*quick);
+		export_notebook.append_page (*centre, _("Quick"));
+	}
 
 	export_notebook.append_page (*file_format_selector, _("File format"));
 	export_notebook.append_page (*timespan_selector, _("Time Span"));
