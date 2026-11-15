@@ -1180,11 +1180,11 @@ SessionDialog::setup_new_session_page ()
 	column->pack_start (*form_field (_("Name"), new_name_entry), false, false);
 	column->pack_start (*form_field (_("Location"), new_folder_chooser), false, false);
 	if (load_template_override.empty ()) {
-		column->pack_start (*form_field (_("Start from"), _template_radio_box), false, false);
+		column->pack_start (*form_field (_("Start from"), _template_radio_box), false, false, rintf (14 * scale));
 	}
-	column->pack_start (*form_field (_("Sample rate"), *rate_box), false, false);
-	column->pack_start (*form_field (_("Bit depth"), *depth_box), false, false);
-	column->pack_start (_create_button, false, false, 6);
+	column->pack_start (*form_field (_("Sample rate"), *rate_box), false, false, rintf (8 * scale));
+	column->pack_start (*form_field (_("Bit depth"), *depth_box), false, false, rintf (8 * scale));
+	column->pack_start (_create_button, false, false, rintf (18 * scale));
 
 	Gtk::Alignment* center = manage (new Gtk::Alignment (0.5, 0.0, 0.0, 0.0));
 	center->set_padding (rintf (8 * scale), rintf (4 * scale), 0, 0);
