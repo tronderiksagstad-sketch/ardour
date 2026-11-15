@@ -61,6 +61,44 @@ ExportFileNotebook::set_session_and_manager (ARDOUR::Session * s, std::shared_pt
 	sync_with_manager ();
 }
 
+std::string
+ExportFileNotebook::label_text ()
+{
+	if (FilePage* page = dynamic_cast<FilePage*> (get_nth_page (0))) {
+		return page->filenames ().label_text ();
+	}
+	return "";
+}
+
+std::string
+ExportFileNotebook::folder_text ()
+{
+	if (FilePage* page = dynamic_cast<FilePage*> (get_nth_page (0))) {
+		return page->filenames ().folder_text ();
+	}
+	return "";
+}
+
+void
+ExportFileNotebook::set_label_text (std::string const& t)
+{
+	for (int i = 0; i < get_n_pages (); ++i) {
+		if (FilePage* page = dynamic_cast<FilePage*> (get_nth_page (i))) {
+			page->filenames ().set_label_text (t);
+		}
+	}
+}
+
+void
+ExportFileNotebook::set_folder_text (std::string const& t)
+{
+	for (int i = 0; i < get_n_pages (); ++i) {
+		if (FilePage* page = dynamic_cast<FilePage*> (get_nth_page (i))) {
+			page->filenames ().set_folder_text (t);
+		}
+	}
+}
+
 void
 ExportFileNotebook::sync_with_manager ()
 {

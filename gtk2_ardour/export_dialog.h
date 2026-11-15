@@ -27,6 +27,8 @@
 #include <string>
 #include <ytkmm/box.h>
 #include <ytkmm/button.h>
+#include <ytkmm/entry.h>
+#include <ytkmm/filechooserbutton.h>
 #include <ytkmm/label.h>
 #include <ytkmm/notebook.h>
 #include <ytkmm/progressbar.h>
@@ -39,6 +41,7 @@
 #include "export_file_notebook.h"
 #include "export_preset_selector.h"
 #include "ardour_dialog.h"
+#include "widgets/ardour_button.h"
 #include "soundcloud_export_selector.h"
 
 namespace ARDOUR {
@@ -98,6 +101,15 @@ protected:
 
 	/*** GUI components ***/
 	Gtk::Notebook export_notebook;
+
+	/* the Quick tab: name, what, where, folder */
+	Gtk::Entry                                 _quick_name;
+	Gtk::FileChooserButton*                    _quick_folder;
+	std::vector<ArdourWidgets::ArdourButton*>  _quick_spans;
+	ArdourWidgets::ArdourButton*               _quick_more;
+	bool                                       _quick_busy;
+	void refresh_quick ();
+	void quick_span (int kind);
 
 private:
 

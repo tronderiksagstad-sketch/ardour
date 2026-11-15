@@ -46,6 +46,10 @@ public:
 
 	void set_state (ARDOUR::ExportProfileManager::FilenameStatePtr state_, ARDOUR::Session* session_);
 	void set_example_filename (std::string filename);
+	std::string label_text () const { return label_entry.get_text (); }
+	void set_label_text (std::string const& t) { if (label_entry.get_text () != t) { label_entry.set_text (t); } }
+	std::string folder_text () const { return path_entry.get_text (); }
+	void set_folder_text (std::string const& t) { if (path_entry.get_text () != t) { path_entry.set_text (t); } }
 	void require_timespan (bool);
 
 	/* Compatibility with other elements */

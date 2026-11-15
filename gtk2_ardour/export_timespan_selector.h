@@ -75,6 +75,9 @@ public:
 	virtual ~ExportTimespanSelector ();
 
 	void sync_with_manager ();
+	/** Pick one range and nothing else: 0 the session, 1 the selection, 2 the loop.
+	 *  @return false if there is no such range. */
+	bool select_only (int kind);
 	virtual void allow_realtime_export (bool);
 
 	sigc::signal<void> CriticalSelectionChanged;

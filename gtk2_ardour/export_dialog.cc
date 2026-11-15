@@ -40,6 +40,7 @@
 #include "ardour/export_format_manager.h"
 #include "ardour/export_status.h"
 #include "ardour/export_handler.h"
+#include "ardour/filesystem_paths.h"
 #include "ardour/profile.h"
 
 #include "widgets/ardour_button.h"
@@ -66,6 +67,9 @@ ExportDialog::ExportDialog (PublicEditor & editor, std::string title, ARDOUR::Ex
   , list_files_button (_("List files"))
   , previous_progress (0)
   , _initialized (false)
+  , _quick_folder (0)
+  , _quick_more (0)
+  , _quick_busy (false)
   , _analysis_only (false)
 { }
 
@@ -187,27 +191,68 @@ ExportDialog::init_gui ()
 	file_format_selector->pack_start (*file_notebook, false, false, 0);
 	file_format_selector->pack_start (*soundcloud_selector, false, false, 0);
 
-	/* The first page: three cards, one click on a card picks everything about the format.
-	 * The pages after it keep every detail for the rare occasion. */
+	/* The first page: the name, what to export, where it is going and the folder, then
+	 * Export. The pages after it keep every detail, behind "More options". */
 	{
 		struct Card { const char* title; const char* note; const char* spec; const char* preset; };
+		/* MP3 needs Ardour's video tools (ffmpeg); without them the small file is Ogg Vorbis */
+		std::string ffmpeg, ffprobe;
+		const bool have_mp3 = ARDOUR::ArdourVideoToolPaths::transcoder_exe (ffmpeg, ffprobe);
 		const Card cards[] = {
 			{ N_("Master"), N_("Best quality, for mixing or mastering"), "WAV", "WAV @ session-rate" },
-			{ N_("Share"),  N_("Small file to send or put online"),      "MP3", "mp3" },
+			{ N_("Share"),  N_("Small file to send or put online"),      have_mp3 ? "MP3" : "Ogg Vorbis", have_mp3 ? "mp3" : "Ogg/Vorbis" },
 			{ N_("CD"),     N_("For burning a CD"),                       "WAV 16-bit 44.1 kHz", "CD (Red Book)" },
 		};
 		const float scale = UIConfiguration::instance ().get_ui_scale ();
 
-		Gtk::Label* heading = Gtk::manage (new Gtk::Label);
-		heading->set_markup (string_compose ("<span size=\"x-large\" weight=\"bold\">%1</span>", _("Where is it going?")));
+		auto caption = [] (std::string const& t) {
+			Gtk::Label* l = Gtk::manage (new Gtk::Label);
+			l->set_markup (string_compose ("<span weight=\"bold\" alpha=\"80%%\">%1</span>", t));
+			return l;
+		};
 
-		Gtk::HBox* row = Gtk::manage (new Gtk::HBox (true, 12));
+		Gtk::Label* heading = Gtk::manage (new Gtk::Label);
+		heading->set_markup (string_compose ("<span size=\"x-large\" weight=\"bold\">%1</span>", _("Export")));
+
+		/* name */
+		_quick_name.set_alignment (0.5);
+		_quick_name.set_size_request (rintf (440 * scale), -1);
+		_quick_name.set_activates_default ();
+		_quick_name.signal_changed ().connect ([this] () {
+			if (!_quick_busy) {
+				_quick_busy = true;
+				file_notebook->set_label_text (_quick_name.get_text ());
+				_quick_busy = false;
+			}
+		});
+		Gtk::Alignment* name_c = Gtk::manage (new Gtk::Alignment (0.5, 0.5, 0, 0));
+		name_c->add (_quick_name);
+
+		/* what */
+		const char* span_names[] = { N_("Whole song"), N_("Selected part"), N_("Loop range") };
+		Gtk::HBox* spans = Gtk::manage (new Gtk::HBox (true, 8));
+		for (int i = 0; i < 3; ++i) {
+			ArdourWidgets::ArdourButton* b = Gtk::manage (new ArdourWidgets::ArdourButton);
+			b->set_name ("tab button");
+			b->set_corner_radius (8);
+			b->set_text (_(span_names[i]));
+			b->set_size_request (-1, rintf (36 * scale));
+			b->signal_clicked.connect ([this, i] () { quick_span (i); });
+			spans->pack_start (*b, true, true);
+			_quick_spans.push_back (b);
+		}
+		spans->set_size_request (rintf (440 * scale), -1);
+		Gtk::Alignment* spans_c = Gtk::manage (new Gtk::Alignment (0.5, 0.5, 0, 0));
+		spans_c->add (*spans);
+
+		/* where it is going */
+		Gtk::HBox* row = Gtk::manage (new Gtk::HBox (true, 10));
 		for (Card const& c : cards) {
 			ArdourWidgets::ArdourButton* b = Gtk::manage (new ArdourWidgets::ArdourButton);
 			b->set_name ("tab button");
 			b->set_corner_radius (10);
 			b->set_text (string_compose ("%1\n%2\n%3", _(c.title), _(c.note), c.spec));
-			b->set_size_request (rintf (250 * scale), rintf (110 * scale));
+			b->set_size_request (rintf (210 * scale), rintf (100 * scale));
 			const std::string preset = c.preset;
 			b->signal_clicked.connect ([this, preset] () {
 				Gtk::ComboBox& combo = preset_selector->the_combo ();
@@ -216,7 +261,12 @@ ExportDialog::init_gui ()
 					Glib::ustring label;
 					i->get_value (0, label);
 					if (label == preset) {
+						/* a new preset rebuilds the pages: keep what was typed here */
+						const std::string name   = _quick_name.get_text ();
+						const std::string folder = _quick_folder ? std::string (_quick_folder->get_filename ()) : std::string ();
 						combo.set_active (i);
+						file_notebook->set_label_text (name);
+						if (!folder.empty ()) { file_notebook->set_folder_text (folder); }
 						break;
 					}
 				}
@@ -224,23 +274,61 @@ ExportDialog::init_gui ()
 			row->pack_start (*b, true, true);
 		}
 
-		Gtk::Label* hint = Gtk::manage (new Gtk::Label (_("Pick one, then press Export. The other tabs hold every detail.")));
+		/* folder */
+		_quick_folder = Gtk::manage (new Gtk::FileChooserButton (_("Choose a folder"), Gtk::FILE_CHOOSER_ACTION_SELECT_FOLDER));
+		_quick_folder->set_size_request (rintf (440 * scale), -1);
+		_quick_folder->signal_selection_changed ().connect ([this] () {
+			if (!_quick_busy && _quick_folder) {
+				const std::string f = _quick_folder->get_filename ();
+				if (!f.empty ()) {
+					_quick_busy = true;
+					file_notebook->set_folder_text (f);
+					_quick_busy = false;
+				}
+			}
+		});
+		Gtk::Alignment* folder_c = Gtk::manage (new Gtk::Alignment (0.5, 0.5, 0, 0));
+		folder_c->add (*_quick_folder);
 
-		Gtk::VBox* quick = Gtk::manage (new Gtk::VBox (false, 18));
-		quick->set_border_width (rintf (24 * scale));
-		quick->pack_start (*heading, false, false);
+		/* more options */
+		_quick_more = Gtk::manage (new ArdourWidgets::ArdourButton);
+		_quick_more->set_name ("generic button");
+		_quick_more->set_corner_radius (7);
+		_quick_more->set_text (_("More options"));
+		_quick_more->set_size_request (rintf (160 * scale), rintf (30 * scale));
+		_quick_more->signal_clicked.connect ([this] () {
+			const bool open = !export_notebook.get_show_tabs ();
+			export_notebook.set_show_tabs (open);
+			_quick_more->set_text (open ? _("Fewer options") : _("More options"));
+			export_notebook.set_current_page (open ? 1 : 0);
+		});
+		Gtk::Alignment* more_c = Gtk::manage (new Gtk::Alignment (0.5, 0.5, 0, 0));
+		more_c->add (*_quick_more);
+
+		Gtk::VBox* quick = Gtk::manage (new Gtk::VBox (false, 8));
+		quick->set_border_width (rintf (20 * scale));
+		quick->pack_start (*heading, false, false, 4);
+		quick->pack_start (*caption (_("File name")), false, false);
+		quick->pack_start (*name_c, false, false);
+		quick->pack_start (*caption (_("What to export")), false, false, 6);
+		quick->pack_start (*spans_c, false, false);
+		quick->pack_start (*caption (_("Where it is going")), false, false, 6);
 		quick->pack_start (*row, false, false);
-		quick->pack_start (*hint, false, false);
+		quick->pack_start (*caption (_("Folder")), false, false, 6);
+		quick->pack_start (*folder_c, false, false);
+		quick->pack_start (*more_c, false, false, 8);
 
-		Gtk::Alignment* centre = Gtk::manage (new Gtk::Alignment (0.5, 0.35, 0, 0));
+		Gtk::Alignment* centre = Gtk::manage (new Gtk::Alignment (0.5, 0.0, 0, 0));
 		centre->add (*quick);
 		export_notebook.append_page (*centre, _("Quick"));
 	}
+
 
 	export_notebook.append_page (*file_format_selector, _("File format"));
 	export_notebook.append_page (*timespan_selector, _("Time Span"));
 	export_notebook.append_page (*channel_selector, _("Channels"));
 
+	export_notebook.set_show_tabs (false); /* "More options" on the first page brings them back */
 	get_vbox()->pack_start (export_notebook, true, true, 0);
 	get_vbox()->pack_end   (warning_widget, false, false, 0);
 	get_vbox()->pack_end   (progress_widget, false, false, 0);
@@ -285,10 +373,49 @@ ExportDialog::sync_with_manager ()
 	timespan_selector->sync_with_manager();
 	channel_selector->sync_with_manager();
 	file_notebook->sync_with_manager ();
+	refresh_quick ();
 
 	update_warnings_and_example_filename ();
 	update_realtime_selection ();
 }
+
+/** Show the name and folder the first file page holds. */
+void
+ExportDialog::refresh_quick ()
+{
+	if (_quick_busy || !_quick_folder) {
+		return;
+	}
+	_quick_busy = true;
+	const std::string name   = file_notebook->label_text ();
+	const std::string folder = file_notebook->folder_text ();
+	if (_quick_name.get_text () != name) {
+		_quick_name.set_text (name);
+	}
+	if (!folder.empty () && Glib::file_test (folder, Glib::FILE_TEST_IS_DIR)) {
+		_quick_folder->set_current_folder (folder);
+	}
+	_quick_busy = false;
+	/* the whole song is the usual choice */
+	for (size_t i = 0; i < _quick_spans.size (); ++i) {
+		_quick_spans[i]->set_active_state (i == 0 ? Gtkmm2ext::ExplicitActive : Gtkmm2ext::Off);
+	}
+}
+
+void
+ExportDialog::quick_span (int kind)
+{
+	if (timespan_selector->select_only (kind)) {
+		for (size_t i = 0; i < _quick_spans.size (); ++i) {
+			_quick_spans[i]->set_active_state ((int) i == kind ? Gtkmm2ext::ExplicitActive : Gtkmm2ext::Off);
+		}
+		update_warnings_and_example_filename ();
+	} else {
+		add_warning (kind == 1 ? _("Nothing is selected: select a part of the song first.") : _("There is no loop range set."));
+		notify_errors (true);
+	}
+}
+
 
 
 void

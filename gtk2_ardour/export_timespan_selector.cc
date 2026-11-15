@@ -372,6 +372,35 @@ ExportTimespanSelector::ms_str (samplecnt_t samples) const
 	return oss.str();
 }
 
+bool
+ExportTimespanSelector::select_only (int kind)
+{
+	if (!state) {
+		return false;
+	}
+	Gtk::TreeModel::iterator found;
+	for (Gtk::TreeModel::iterator i = range_list->children ().begin (); i != range_list->children ().end (); ++i) {
+		Location* loc = i->get_value (range_cols.location);
+		if (!loc) {
+			continue;
+		}
+		const bool hit = (kind == 0 && loc->is_session_range ()) ||
+		                 (kind == 1 && loc == state->selection_range.get ()) ||
+		                 (kind == 2 && loc->is_auto_loop ());
+		if (hit) {
+			found = i;
+		}
+	}
+	if (!found) {
+		return false;
+	}
+	for (Gtk::TreeModel::iterator i = range_list->children ().begin (); i != range_list->children ().end (); ++i) {
+		(*i)[range_cols.selected] = (i == found);
+	}
+	update_timespans ();
+	return true;
+}
+
 void
 ExportTimespanSelector::update_range_name (std::string const & path, std::string const & new_text)
 {

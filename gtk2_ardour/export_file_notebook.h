@@ -49,6 +49,12 @@ public:
 	void sync_with_manager ();
 	void update_example_filenames();
 
+	/* the name and folder, for the Quick tab of the export dialog */
+	std::string label_text ();
+	void        set_label_text (std::string const&);
+	std::string folder_text ();
+	void        set_folder_text (std::string const&);
+
 	std::shared_ptr<SoundcloudExportSelector> soundcloud_export_selector;
 
 	sigc::signal<void> CriticalSelectionChanged;
@@ -93,6 +99,7 @@ private:
 		bool get_soundcloud_upload () const;
 
 		void update_example_filename();
+		ExportFilenameSelector& filenames () { return filename_selector; }
 
 		void update_analysis_button ();
 		void update_reimport_button ();
