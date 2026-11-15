@@ -776,6 +776,7 @@ MixerStrip::set_route (std::shared_ptr<Route> rt)
 	gpm.gain_automation_state_button.show();
 
 	parameter_changed ("mixer-element-visibility");
+	apply_show_more ();
 	map_frozen();
 
 	show ();
@@ -1870,6 +1871,9 @@ MixerStrip::parameter_changed (string p)
 		   our VisibilityGroup to reflect these changes in our widgets.
 		*/
 		_visibility.set_state (UIConfiguration::instance().get_mixer_strip_visibility ());
+		apply_show_more ();
+	} else if (p == "mixer-show-more") {
+		apply_show_more ();
 	} else if (p == "track-name-number") {
 		name_changed ();
 		update_track_number_visibility();
@@ -1886,6 +1890,30 @@ MixerStrip::parameter_changed (string p)
 	} else if (p == "use-route-color-widely") {
 		reset_strip_style ();
 	}
+}
+
+/** The rarely used buttons (Iso, Lock, In, Disk, Post, group, RTA, comments)
+ *  are only shown when the mixer's "Show more" switch is on.
+ */
+void
+MixerStrip::apply_show_more ()
+{
+	const bool more = UIConfiguration::instance().get_mixer_show_more ();
+	if (more) {
+		/* bring back everything the usual visibility settings allow */
+		_visibility.set_state (UIConfiguration::instance().get_mixer_strip_visibility ());
+		bottom_button_table.show ();
+		if (route () && is_track ()) {
+			if (monitor_input_button) { monitor_input_button->show (); }
+			if (monitor_disk_button)  { monitor_disk_button->show (); }
+		}
+		return;
+	}
+	solo_iso_table.hide ();
+	bottom_button_table.hide ();
+	_comment_button.hide ();
+	if (monitor_input_button) { monitor_input_button->hide (); }
+	if (monitor_disk_button)  { monitor_disk_button->hide (); }
 }
 
 /** Called to decide whether the solo isolate / solo lock button visibility should

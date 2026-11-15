@@ -246,6 +246,15 @@ private:
 	std::vector<Gtk::Label*>                  _mixer_scene_labels;
 	ARDOUR::MixerScene*                       _mixer_scene_release;
 
+	/* the bar above the strips: Show more, and one menu for scenes and the strip list */
+	Gtk::VBox                   _content_vbox;
+	Gtk::HBox                   _topbar;
+	ArdourWidgets::ArdourButton _more_button;
+	ArdourWidgets::ArdourButton _scenes_button;
+	void build_topbar ();
+	void popup_scenes_menu ();
+	void update_more_button ();
+
 	void popup_scene_menu (GdkEventButton* ev, int);
 	bool scene_button_press (GdkEventButton*, int);
 	bool scene_button_release (GdkEventButton*, int);

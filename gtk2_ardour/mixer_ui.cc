@@ -414,7 +414,11 @@ Mixer_UI::Mixer_UI ()
 	inner_pane.set_drag_cursor (*PublicEditor::instance().cursors()->expand_left_right);
 
 	content_app_bar.add (_application_bar);
-	content_main.add (global_hpacker);
+	build_topbar ();
+	_content_vbox.pack_start (_topbar, false, false);
+	_content_vbox.pack_start (global_hpacker, true, true);
+	_content_vbox.show ();
+	content_main.add (_content_vbox);
 
 	if (!Profile->get_mixbus ()) {
 		content_att_left.add (list_vpacker);
@@ -2620,7 +2624,7 @@ Mixer_UI::set_state (const XMLNode& node, int version)
 		}
 	}
 
-	yn = true;
+	yn = false; /* the strips get the room; strips and scenes are in the top menu */
 	node.get_property ("show-mixer-list", yn);
 	{
 		Glib::RefPtr<ToggleAction> act = ActionManager::get_toggle_action (X_("Mixer"), X_("ToggleMixerList"));
@@ -4413,6 +4417,81 @@ Mixer_UI::rename_mixer_scene (size_t n)
 			break;
 		}
 	}
+}
+
+void
+Mixer_UI::build_topbar ()
+{
+	const float scale = UIConfiguration::instance ().get_ui_scale ();
+
+	_more_button.set_name ("tab button");
+	_more_button.set_corner_radius (7);
+	_more_button.set_size_request (rintf (130 * scale), rintf (34 * scale));
+	_more_button.signal_clicked.connect ([this] () {
+		UIConfiguration::instance ().set_mixer_show_more (!UIConfiguration::instance ().get_mixer_show_more ());
+		update_more_button ();
+	});
+	ArdourWidgets::set_tooltip (_more_button, _("Show or hide the rarely used buttons on every strip: Iso, Lock, In, Disk, Post, group, RTA and comments."));
+
+	_scenes_button.set_name ("generic button");
+	_scenes_button.set_corner_radius (7);
+	_scenes_button.set_text (_("Scenes and strips") + string (" \xE2\x96\xBE"));
+	_scenes_button.set_size_request (rintf (190 * scale), rintf (34 * scale));
+	_scenes_button.signal_clicked.connect (sigc::mem_fun (*this, &Mixer_UI::popup_scenes_menu));
+
+	_topbar.set_spacing (rintf (12 * scale));
+	_topbar.set_border_width (rintf (8 * scale));
+	Gtk::Alignment* a = manage (new Gtk::Alignment (0.5, 0.5, 0, 0));
+	Gtk::HBox* b = manage (new Gtk::HBox);
+	b->set_spacing (rintf (12 * scale));
+	b->pack_start (_more_button, false, false);
+	b->pack_start (_scenes_button, false, false);
+	a->add (*b);
+	_topbar.pack_start (*a, true, true);
+	update_more_button ();
+	_topbar.show_all ();
+}
+
+void
+Mixer_UI::update_more_button ()
+{
+	const bool more = UIConfiguration::instance ().get_mixer_show_more ();
+	_more_button.set_text (more ? _("Show less") : _("Show more"));
+	_more_button.set_active_state (more ? Gtkmm2ext::ExplicitActive : Gtkmm2ext::Off);
+}
+
+void
+Mixer_UI::popup_scenes_menu ()
+{
+	Gtk::Menu* menu = ARDOUR_UI_UTILS::shared_popup_menu ();
+	Gtk::Menu_Helpers::MenuList& items = menu->items ();
+
+	if (_session) {
+		for (size_t i = 0; i < N_MIXER_SCENE_BTNS; ++i) {
+			std::shared_ptr<MixerScene> ms = _session->nth_mixer_scene (i);
+			const bool filled = ms && !ms->empty ();
+			string label = string_compose ("%1   %2   (F%1)", i + 1, filled ? ms->name () : string (_("empty")));
+			label = string_compose ("%1   %2", i + 1, filled ? ms->name () : string (_("empty")));
+			items.push_back (Gtk::Menu_Helpers::MenuElem (label));
+			Gtk::Menu* sub = manage (new Gtk::Menu);
+			Gtk::Menu_Helpers::MenuList& si = sub->items ();
+			if (filled) {
+				si.push_back (Gtk::Menu_Helpers::MenuElem (_("Recall"), sigc::bind (sigc::mem_fun (*this, &Mixer_UI::recall_mixer_scene), i, true, false)));
+			}
+			si.push_back (Gtk::Menu_Helpers::MenuElem (_("Store the mixer here"), sigc::bind (sigc::mem_fun (*this, &Mixer_UI::store_mixer_scene), i)));
+			if (filled) {
+				si.push_back (Gtk::Menu_Helpers::MenuElem (_("Rename"), sigc::bind (sigc::mem_fun (*this, &Mixer_UI::rename_mixer_scene), i)));
+				si.push_back (Gtk::Menu_Helpers::MenuElem (_("Clear"), sigc::bind (sigc::mem_fun (*this, &Mixer_UI::clear_mixer_scene), i, true)));
+			}
+			items.back ().set_submenu (*sub);
+		}
+	}
+	items.push_back (Gtk::Menu_Helpers::SeparatorElem ());
+	items.push_back (Gtk::Menu_Helpers::MenuElem (_("Strip list and groups…"), [] () {
+		Glib::RefPtr<ToggleAction> act = ActionManager::get_toggle_action (X_("Mixer"), X_("ToggleMixerList"));
+		if (act) { act->set_active (!act->get_active ()); }
+	}));
+	menu->popup (1, gtk_get_current_event_time ());
 }
 
 void

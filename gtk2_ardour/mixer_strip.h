@@ -145,6 +145,7 @@ public:
 	std::string state_id() const;
 
 	void parameter_changed (std::string);
+	void apply_show_more ();
 	void route_active_changed ();
 
 	void copy_processors ();
