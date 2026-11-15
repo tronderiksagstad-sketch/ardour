@@ -677,6 +677,12 @@ Editor::register_actions ()
 		Glib::RefPtr<ToggleAction>::cast_static (act)->set_active (UIConfiguration::instance ().get_show_track_meters ());
 		act = ActionManager::register_toggle_action (editor_actions, X_("ToggleTrackLevelBars"), _("Show Track Level Bars"), sigc::mem_fun (*this, &Editor::set_track_level_bars_visible));
 		Glib::RefPtr<ToggleAction>::cast_static (act)->set_active (UIConfiguration::instance ().get_show_track_level_bars ());
+		ActionManager::register_action (editor_actions, X_("comp-start-earlier"), _("Comp: Start Earlier"), sigc::bind (sigc::mem_fun (*this, &Editor::comp_nudge_edge), true, -1));
+		ActionManager::register_action (editor_actions, X_("comp-start-later"), _("Comp: Start Later"), sigc::bind (sigc::mem_fun (*this, &Editor::comp_nudge_edge), true, 1));
+		ActionManager::register_action (editor_actions, X_("comp-end-earlier"), _("Comp: End Earlier"), sigc::bind (sigc::mem_fun (*this, &Editor::comp_nudge_edge), false, -1));
+		ActionManager::register_action (editor_actions, X_("comp-end-later"), _("Comp: End Later"), sigc::bind (sigc::mem_fun (*this, &Editor::comp_nudge_edge), false, 1));
+		ActionManager::register_action (editor_actions, X_("comp-flatten"), _("Comp: Make It One Region"), sigc::mem_fun (*this, &Editor::comp_flatten));
+		ActionManager::register_action (editor_actions, X_("comp-hear-alone"), _("Comp: Hear This Take Alone"), sigc::mem_fun (*this, &Editor::comp_hear_alone));
 		ActionManager::register_toggle_action (editor_actions, X_("comp-takes"), _("Comp Takes"), sigc::mem_fun (*this, &Editor::toggle_comp_takes));
 		ActionManager::register_action (editor_actions, X_("add-plugin"), _("Add Plugin..."), sigc::ptr_fun (&PluginBrowser::show_for_selected));
 		act = ActionManager::register_toggle_action (editor_actions, X_("ToggleQuickHelp"), _("Quick Help"), sigc::ptr_fun (&QuickHelp::toggled));

@@ -14,7 +14,7 @@ Checked against this source tree where unsure. Written 2026-11-10.
 | VariAudio (pitch/timing editing of vocals) | ❌ Nothing built in. |
 | Chord Pads | ❌ |
 | Control Room | ✅ **Monitor Section** (dim, mono, cut, solo modes, solo-isolate, cue). |
-| Comping | 🟡 *(this fork)* **Track › Comp Takes**: takes shown as lanes under the track; drag across a take (Grab tool) to put that part on top, with short crossfades. Still to do: nudging the edges, a flatten-to-one-region button, new takes joining the lanes automatically. |
+| Comping | 🟡 *(this fork)* **Track › Comp Takes**: takes shown as lanes under the track; drag across a take (Grab tool) to put that part on top, with 10 ms crossfades. Alt+[ ] { } move a part's edges, **Hear This Take Alone**, **Make It One Region**. Still to do: take labels and a separate Comp lane. |
 | Audio Warp Quantize | ✅ *(this fork)* **Quantize Audio to Grid**: stretches between hits, several tracks in sync, draggable warp markers. |
 
 ## General

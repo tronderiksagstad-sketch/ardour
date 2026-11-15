@@ -2803,6 +2803,110 @@ Editor::toggle_comp_takes ()
 	}
 }
 
+/** Move the start or the end of the selected part by 10 ms (comping). */
+void
+Editor::comp_nudge_edge (bool start, int direction)
+{
+	if (!_session || selection->regions.empty ()) {
+		return;
+	}
+	const timecnt_t step = timecnt_t (_session->sample_rate () / 100);
+	bool in_command = false;
+
+	for (RegionSelection::iterator i = selection->regions.begin (); i != selection->regions.end (); ++i) {
+		std::shared_ptr<Region> r = (*i)->region ();
+		std::shared_ptr<Playlist> pl = r->playlist ();
+		if (!pl) {
+			continue;
+		}
+		if (!in_command) {
+			begin_reversible_command (_("comp: move the edge of a part"));
+			in_command = true;
+		}
+		pl->clear_changes ();
+		if (start) {
+			r->trim_front (direction < 0 ? r->position ().earlier (step) : r->position () + step);
+		} else {
+			const timepos_t last = r->position () + r->length ();
+			r->trim_end (direction < 0 ? last.earlier (step) : last + step);
+		}
+		_session->add_command (new StatefulDiffCommand (r));
+		_session->add_command (new StatefulDiffCommand (pl));
+	}
+	if (in_command) {
+		commit_reversible_command ();
+	}
+}
+
+/** Turn the layers of the selected tracks into one region. */
+void
+Editor::comp_flatten ()
+{
+	bool any = false;
+	timepos_t first = timepos_t::max (Temporal::AudioTime);
+	timepos_t last;
+
+	/* the tracks of the selected tracks, or of the selected parts */
+	TrackViewList tvl (selection->tracks);
+	for (RegionSelection::iterator i = selection->regions.begin (); i != selection->regions.end (); ++i) {
+		if (std::find (tvl.begin (), tvl.end (), &(*i)->get_time_axis_view ()) == tvl.end ()) {
+			tvl.push_back (&(*i)->get_time_axis_view ());
+		}
+	}
+
+	for (TrackViewList::iterator i = tvl.begin (); i != tvl.end (); ++i) {
+		RouteTimeAxisView* rtv = dynamic_cast<RouteTimeAxisView*> (*i);
+		if (!rtv || !rtv->is_track () || !rtv->track ()->playlist ()) {
+			continue;
+		}
+		std::pair<timepos_t, timepos_t> ext = rtv->track ()->playlist ()->get_extent ();
+		if (ext.first == ext.second) {
+			continue;
+		}
+		first = std::min (first, ext.first);
+		last  = std::max (last, ext.second);
+		any   = true;
+	}
+	if (!any) {
+		return;
+	}
+	selection->set (tvl);
+	selection->set (first, last);
+	_bounce_quiet = true;
+	bounce_range_selection (ReplaceRange, false);
+	_bounce_quiet = false;
+}
+
+/** Toggle: silence every take but the one of the selected part, to hear it alone. */
+void
+Editor::comp_hear_alone ()
+{
+	if (!_comp_muted.empty ()) {
+		for (std::vector<std::weak_ptr<Region> >::iterator i = _comp_muted.begin (); i != _comp_muted.end (); ++i) {
+			if (std::shared_ptr<Region> r = i->lock ()) {
+				r->set_muted (false);
+			}
+		}
+		_comp_muted.clear ();
+		return;
+	}
+	if (selection->regions.empty ()) {
+		return;
+	}
+	std::shared_ptr<Region> keep = selection->regions.front ()->region ();
+	std::shared_ptr<Playlist> pl = keep->playlist ();
+	if (!pl) {
+		return;
+	}
+	std::shared_ptr<RegionList> all = pl->region_list ();
+	for (RegionList::iterator i = all->begin (); i != all->end (); ++i) {
+		if (*i != keep && (*i)->layer () != keep->layer () && !(*i)->muted ()) {
+			(*i)->set_muted (true);
+			_comp_muted.push_back (*i);
+		}
+	}
+}
+
 /** Put the part from @a s to @a e of the region @a rv shows on top of the
  *  other takes, with short fades so the join does not click.
  */
@@ -2824,8 +2928,7 @@ Editor::comp_use_part (RegionView* rv, timepos_t s, timepos_t e)
 		return; /* under 5 ms: a click, not a part */
 	}
 
-	string name;
-	RegionFactory::region_name (name, r->name (), true);
+	string name = _("Comp");
 
 	PropertyList plist;
 	plist.add (ARDOUR::Properties::length, s.distance (e));
@@ -4171,7 +4274,10 @@ Editor::bounce_range_selection (BounceTarget target, bool with_processing)
 	bool   copy_to_clip_library = false;
 	bool   copy_to_trigger = false;
 	uint32_t trigger_slot         = 0;
-	{
+	if (_bounce_quiet) {
+		/* "Make it one region" (comping): no questions */
+		bounce_name = _("Comp");
+	} else {
 		/*prompt the user for a new name*/
 
 		ArdourWidgets::Prompter dialog (true);

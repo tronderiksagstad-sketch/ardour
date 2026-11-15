@@ -652,6 +652,8 @@ private:
 	TempoMarker* find_marker_for_tempo (Temporal::TempoPoint const &);
 	MeterMarker* find_marker_for_meter (Temporal::MeterPoint const &);
 	bool _show_marker_lines;
+	std::vector<std::weak_ptr<ARDOUR::Region> > _comp_muted; ///< what "hear alone" has silenced
+	bool _bounce_quiet = false; ///< bounce without asking for a name (comping)
 	bool _comp_mode; ///< takes are shown as lanes and a drag across a take puts that part on top
 
 
@@ -1151,6 +1153,9 @@ private:
 	void toggle_comp_takes ();
 	bool comp_mode () const { return _comp_mode; }
 	void comp_use_part (RegionView*, Temporal::timepos_t, Temporal::timepos_t);
+	void comp_nudge_edge (bool start, int direction);
+	void comp_flatten ();
+	void comp_hear_alone ();
 	void change_region_layering_order (bool from_context_menu);
 	void lower_region ();
 	void lower_region_to_bottom ();

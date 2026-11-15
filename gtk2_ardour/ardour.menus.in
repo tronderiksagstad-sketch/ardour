@@ -504,6 +504,12 @@
       <menuitem action='add-stereo-track'/>
       <menuitem action='add-plugin'/>
       <menuitem action='comp-takes'/>
+      <menuitem action='comp-hear-alone'/>
+      <menuitem action='comp-flatten'/>
+      <menuitem action='comp-start-earlier'/>
+      <menuitem action='comp-start-later'/>
+      <menuitem action='comp-end-earlier'/>
+      <menuitem action='comp-end-later'/>
       <menuitem action='AddTrackBus'/>
 #ifdef MIXBUS
       <menuitem action='addExistingAudioFiles'/>

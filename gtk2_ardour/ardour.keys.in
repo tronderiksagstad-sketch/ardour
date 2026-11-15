@@ -338,6 +338,10 @@ This mode provides many different operations on both regions and control points,
 @edit|Editor/new-playlists-for-armed-tracks|      <@PRIMARY><@SECONDARY><@TERTIARY@>quotedbl|New Playlists for ALL tracks
 @edit|Editor/new-playlists-for-all-tracks|                    <@PRIMARY><@TERTIARY@>quotedbl|New Playlists for ALL tracks
 
+@edit|Editor/comp-start-earlier|                  <@SECONDARY@>bracketleft|comp: start of the part earlier
+@edit|Editor/comp-start-later|                    <@SECONDARY@>braceleft|comp: start of the part later
+@edit|Editor/comp-end-later|                      <@SECONDARY@>bracketright|comp: end of the part later
+@edit|Editor/comp-end-earlier|                    <@SECONDARY@>braceright|comp: end of the part earlier
 @edit|Editor/layer-display-overlaid|              <@TERTIARY@>braceleft|Display Region Layers: Overlaid
 @edit|Editor/layer-display-stacked|              <@TERTIARY@>braceright|Display Region Layers: Stacked
 @edit|Region/raise-region-to-top|                       <@TERTIARY@>bar|Raise Selected Region to Top Layer
