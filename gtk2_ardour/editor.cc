@@ -4173,6 +4173,9 @@ Editor::visual_changer (const VisualChange& vc)
 	if (vc.pending & VisualChange::TimeOrigin) {
 		double new_time_origin = sample_to_pixel_unrounded (vc.time_origin);
 		set_horizontal_position (new_time_origin);
+		if (_comp_mode) {
+			update_comp_labels ();
+		}
 	}
 
 	if (vc.pending & VisualChange::YOrigin) {

@@ -66,6 +66,8 @@ class RegionSelection;
 class CrossfadeView;
 class Selection;
 
+namespace ArdourCanvas { class Text; }
+
 class StreamView : public PBD::ScopedConnectionList, public virtual ViewBackground, public SelectableOwner
 {
 public:
@@ -126,6 +128,7 @@ public:
 	virtual void redisplay_track () = 0;
 	double child_height () const;
 	ARDOUR::layer_t layers () const { return _layers; }
+	void update_lane_labels (); ///< "Take 1, Take 2 ... Comp" at the left edge of each lane while comping
 
 	virtual RegionView* create_region_view (std::shared_ptr<ARDOUR::Region>, bool, bool) {
 		return 0;
@@ -189,6 +192,7 @@ protected:
 	PBD::ScopedConnection playlist_switched_connection;
 
 	ARDOUR::layer_t _layers;
+	std::vector<ArdourCanvas::Text*> _lane_labels;
 	LayerDisplay    _layer_display;
 
 	double _height;

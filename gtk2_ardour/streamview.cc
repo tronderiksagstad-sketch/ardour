@@ -38,6 +38,7 @@
 #include "pbd/compose.h"
 
 #include "canvas/rectangle.h"
+#include "canvas/text.h"
 #include "canvas/debug.h"
 
 #include "audio_region_view.h"
@@ -710,7 +711,61 @@ StreamView::update_contents_height ()
 		}
 	}
 
+	update_lane_labels ();
+
 	ContentsHeightChanged (); /* EMIT SIGNAL */
+}
+
+void
+StreamView::update_lane_labels ()
+{
+	const bool want = _layer_display == Stacked && _trackview.editor ().comp_mode () && _layers > 0;
+
+	if (!want) {
+		for (std::vector<ArdourCanvas::Text*>::iterator i = _lane_labels.begin (); i != _lane_labels.end (); ++i) {
+			delete *i;
+		}
+		_lane_labels.clear ();
+		return;
+	}
+
+	/* the lanes from the bottom: takes are numbered, a lane that holds only comp parts is the Comp lane */
+	const double h = child_height ();
+	const double x = _trackview.editor ().sample_to_pixel (_trackview.editor ().leftmost_sample ()) + 6;
+
+	while (_lane_labels.size () < _layers) {
+		ArdourCanvas::Text* t = new ArdourCanvas::Text (_canvas_group);
+		t->set_font_description (UIConfiguration::instance ().get_SmallFont ());
+		t->set_color (0xffffffcc);
+		t->set_ignore_events (true);
+		_lane_labels.push_back (t);
+	}
+	while (_lane_labels.size () > _layers) {
+		delete _lane_labels.back ();
+		_lane_labels.pop_back ();
+	}
+
+	int take = 0;
+	for (layer_t l = 0; l < _layers; ++l) {
+		int n_comp = 0;
+		int n_all  = 0;
+		for (RegionViewList::iterator i = region_views.begin (); i != region_views.end (); ++i) {
+			if ((*i)->region ()->layer () == l) {
+				++n_all;
+				if ((*i)->region ()->name ().compare (0, 4, "Comp") == 0) {
+					++n_comp;
+				}
+			}
+		}
+		const bool comp = n_all > 0 && n_comp == n_all;
+		if (!comp) {
+			++take;
+		}
+		ArdourCanvas::Text* t = _lane_labels[l];
+		t->set (comp ? string (_("Comp")) : string_compose (_("Take %1"), take));
+		t->set_position (ArdourCanvas::Duple (x, _height - (l + 1) * h + h - 18));
+		t->raise_to_top ();
+	}
 }
 
 void

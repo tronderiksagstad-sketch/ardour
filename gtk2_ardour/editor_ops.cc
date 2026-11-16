@@ -2803,6 +2803,18 @@ Editor::toggle_comp_takes ()
 	}
 }
 
+/** Put the lane labels at the left edge of what is visible. */
+void
+Editor::update_comp_labels ()
+{
+	for (TrackViewList::iterator i = track_views.begin (); i != track_views.end (); ++i) {
+		RouteTimeAxisView* rtv = dynamic_cast<RouteTimeAxisView*> (*i);
+		if (rtv && rtv->view ()) {
+			rtv->view ()->update_lane_labels ();
+		}
+	}
+}
+
 /** Move the start or the end of the selected part by 10 ms (comping). */
 void
 Editor::comp_nudge_edge (bool start, int direction)

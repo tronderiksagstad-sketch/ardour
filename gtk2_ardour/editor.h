@@ -1152,6 +1152,7 @@ private:
 	void raise_region_to_top ();
 	void toggle_comp_takes ();
 	bool comp_mode () const { return _comp_mode; }
+	void update_comp_labels ();
 	void comp_use_part (RegionView*, Temporal::timepos_t, Temporal::timepos_t);
 	void comp_nudge_edge (bool start, int direction);
 	void comp_flatten ();
